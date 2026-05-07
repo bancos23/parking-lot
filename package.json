@@ -6,7 +6,7 @@
     "dev:backend": "cd backend && py -m uvicorn main:app --reload",
     "dev:frontend": "cd frontend && npm run dev",
     "install:frontend": "cd frontend && npm install",
-    "install:backend": "cd backend && pip install fastapi uvicorn[standard]",
+    "install:backend": "cd backend && pip install -e .",
     "install:all": "npm run install:frontend && npm run install:backend"
   },
   "devDependencies": {

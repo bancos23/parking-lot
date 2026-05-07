@@ -5,6 +5,7 @@ node_modules/
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
 .venv/
 venv/
 
@@ -31,4 +32,5 @@ Thumbs.db
 # Env
 .env
 .env.*
+!.env.example
 *.local
