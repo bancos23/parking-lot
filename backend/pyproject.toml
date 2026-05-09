@@ -11,10 +11,12 @@ dependencies = [
     "asyncpg>=0.31.0",
     "alembic>=1.18.4",
     "pydantic-settings>=2.14.0",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt>=4.0.1,<4.1",
 ]
 
 [tool.setuptools]
-py-modules = ["main", "config", "database", "models"]
+py-modules = ["main", "config", "database", "models", "schemas", "auth"]
 
 [build-system]
 requires = ["setuptools>=75.0"]
