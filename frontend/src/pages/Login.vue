@@ -40,7 +40,7 @@ async function handleLogin() {
       <div class="brand-copy">
         <h1>Smarter parking lot control.</h1>
         <p>
-          Monitor occupancy, track vehicles, process payments,
+          Monitor occupancy, organize camera feeds,
           and manage parking spaces from one clean dashboard.
         </p>
       </div>
@@ -97,6 +97,7 @@ async function handleLogin() {
 .login-page {
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 3vh 2vw;
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -366,12 +367,13 @@ async function handleLogin() {
 
 @media (max-width: 500px) {
   .login-page {
-    padding: 12px;
+    padding: 12px 12px max(28px, calc(env(safe-area-inset-bottom) + 20px));
   }
 
   .brand-panel {
     padding: 24px 20px;
     border-radius: 14px;
+    gap: 16px;
   }
 
   .brand-panel::after {
@@ -379,35 +381,21 @@ async function handleLogin() {
   }
 
   .brand-copy h1 {
-    font-size: 1.6rem;
+    font-size: 1.45rem;
     margin-bottom: 8px;
   }
 
   .brand-copy p {
-    font-size: 0.9rem;
+    font-size: 0.84rem;
+    line-height: 1.45;
   }
 
   .mini-stats {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-  }
-
-  .mini-card {
-    padding: 10px 8px;
-    border-radius: 8px;
-    text-align: center;
-  }
-
-  .mini-card strong {
-    font-size: 1.1rem;
-  }
-
-  .mini-card span {
-    font-size: 0.7rem;
+    display: none;
   }
 
   .login-card {
-    padding: 24px 20px;
+    padding: 18px 16px;
     border-radius: 14px;
     border: none;
     box-shadow: none;
@@ -415,11 +403,35 @@ async function handleLogin() {
   }
 
   .login-card h2 {
-    font-size: 1.6rem;
+    font-size: 1.45rem;
+  }
+
+  .login-card>p {
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+  }
+
+  .field {
+    margin-bottom: 14px;
+  }
+
+  .field label {
+    margin-bottom: 6px;
+  }
+
+  .field input {
+    padding: 12px 14px;
+  }
+
+  .primary-btn {
+    margin-top: 4px;
+    padding: 12px 14px;
   }
 
   .auth-switch {
     font-size: 0.9rem;
+    margin-top: 16px;
+    margin-bottom: env(safe-area-inset-bottom);
   }
 }
 </style>

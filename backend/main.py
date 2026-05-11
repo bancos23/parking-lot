@@ -6,9 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sqlalchemy import select
 
-from auth import get_current_account, router as auth_router
+from auth import get_optional_account, router as auth_router
 from database import engine, async_session, Base
+from lots import router as lots_router
 from models import Account, UserRole
+from spaces import router as spaces_router
 
 DEFAULT_ROLES = ["administrator", "guest"]
 
@@ -39,6 +41,8 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(lots_router)
+app.include_router(spaces_router)
 
 @app.get("/api/test")
 def read_root():
@@ -46,14 +50,15 @@ def read_root():
 
 
 @app.get("/api/dashboard")
-def dashboard(account: Account = Depends(get_current_account)):
+def dashboard(account: Account | None = Depends(get_optional_account)):
 	return {
 		"account": {
 			"id": account.id,
 			"email": account.email,
 			"firstName": account.first_name,
 			"lastName": account.last_name,
-		},
+			"role": account.role.name,
+		} if account else None,
 		"stats": {
 			"totalSpots": 128,
 			"occupiedSpots": 110,

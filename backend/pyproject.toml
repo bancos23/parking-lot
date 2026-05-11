@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["main", "config", "database", "models", "schemas", "auth"]
+py-modules = ["main", "config", "database", "models", "schemas", "auth", "spaces", "lots"]
 
 [build-system]
 requires = ["setuptools>=75.0"]

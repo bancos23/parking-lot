@@ -102,6 +102,42 @@ async def get_current_account(
     return account
 
 
+async def get_optional_account(
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+    db: AsyncSession = Depends(get_db),
+) -> Account | None:
+    if not session_token:
+        return None
+
+    token_hash = hash_session_token(session_token)
+    session_result = await db.execute(
+        select(AccountSession.account_id)
+        .where(AccountSession.token_hash == token_hash)
+        .where(AccountSession.expires_at > datetime.now(timezone.utc))
+    )
+    account_id = session_result.scalar_one_or_none()
+    if not account_id:
+        clear_session_cookie(response)
+        return None
+
+    account = await db.get(Account, account_id)
+    if not account:
+        clear_session_cookie(response)
+        return None
+
+    await db.execute(
+        update(AccountSession)
+        .where(AccountSession.token_hash == token_hash)
+        .values(expires_at=new_session_expiration())
+    )
+    await db.commit()
+    set_session_cookie(response, session_token)
+
+    await db.refresh(account, attribute_names=["role"])
+    return account
+
+
 async def get_or_create_role(db: AsyncSession, name: str) -> UserRole:
     result = await db.execute(select(UserRole).where(UserRole.name == name))
     role = result.scalar_one_or_none()
@@ -118,7 +154,9 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    role = await get_or_create_role(db, "guest")
+    first_account = await db.execute(select(Account.id).limit(1))
+    role_name = "administrator" if first_account.scalar_one_or_none() is None else "guest"
+    role = await get_or_create_role(db, role_name)
 
     account = Account(
         email=body.email,

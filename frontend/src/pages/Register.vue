@@ -52,7 +52,7 @@ async function handleRegister() {
 </script>
 
 <template>
-  <section class="auth-page">
+  <section class="auth-page register-page">
     <aside class="brand-panel">
       <div class="logo">
         <div class="logo-icon">P</div>
@@ -63,7 +63,7 @@ async function handleRegister() {
         <h1>Start managing parking smarter.</h1>
         <p>
           Create your ParkFlow account and get access to occupancy tracking,
-          vehicle monitoring, payment tools, and space management.
+          camera allocation, parking lot setup, and space management.
         </p>
       </div>
 
@@ -86,7 +86,7 @@ async function handleRegister() {
     </aside>
 
     <main class="auth-content">
-      <form class="auth-card" @submit.prevent="handleRegister">
+      <form class="auth-card register-card" @submit.prevent="handleRegister">
         <h2>Create account</h2>
         <p>Register to start managing your parking lot operations.</p>
 
