@@ -6,11 +6,12 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from passlib.context import CryptContext
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from config import settings
 from database import get_db
-from models import Account, AccountSession, UserRole
-from schemas import AccountResponse, LoginRequest, MessageResponse, RegisterRequest
+from models import Account, AccountSession, Organisation, OrganisationMembership, UserRole
+from schemas import AccountOrganisationResponse, AccountResponse, LoginRequest, MessageResponse, RegisterRequest
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -23,13 +24,61 @@ def hash_session_token(token: str) -> str:
 
 
 def account_response(account: Account) -> AccountResponse:
+    role_name = "municipal" if account.role.name == "administrator" else account.role.name
+    memberships = sorted(
+        account.organisation_memberships,
+        key=lambda membership: membership.organisation.name.lower(),
+    )
     return AccountResponse(
         id=account.id,
         email=account.email,
-        first_name=account.first_name,
-        last_name=account.last_name,
-        role=account.role.name,
+        name=account.name,
+        phone=account.phone,
+        role=role_name,
+        organisations=[
+            AccountOrganisationResponse(
+                id=membership.organisation.id,
+                name=membership.organisation.name,
+                organisation_type=membership.organisation.organisation_type,
+                membership_role=membership.membership_role,
+            )
+            for membership in memberships
+            if membership.deleted_at is None and membership.organisation.deleted_at is None
+        ],
     )
+
+
+def normalize_name(value: str) -> str:
+    return " ".join(value.strip().split())
+
+
+def normalize_optional(value: str | None) -> str | None:
+    normalized = " ".join(value.strip().split()) if value else ""
+    return normalized or None
+
+
+def normalize_organisation_name(value: str) -> str:
+    return " ".join(value.strip().split())
+
+
+def normalized_organisation_key(value: str) -> str:
+    return normalize_organisation_name(value).casefold()
+
+
+def account_context_options():
+    return (
+        selectinload(Account.role),
+        selectinload(Account.organisation_memberships).selectinload(OrganisationMembership.organisation),
+    )
+
+
+async def load_account_context(db: AsyncSession, account_id: int) -> Account | None:
+    result = await db.execute(
+        select(Account)
+        .options(*account_context_options())
+        .where(Account.id == account_id)
+    )
+    return result.scalar_one_or_none()
 
 
 def new_session_expiration() -> datetime:
@@ -68,13 +117,31 @@ def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/", samesite="lax")
 
 
+def clear_session_cookie_header() -> str:
+    return f'{SESSION_COOKIE_NAME}=""; Max-Age=0; Path=/; SameSite=lax'
+
+
+def authentication_error(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=401,
+        detail=detail,
+        headers={"Set-Cookie": clear_session_cookie_header()},
+    )
+
+
+async def destroy_session(db: AsyncSession, token_hash: str) -> None:
+    await db.execute(delete(AccountSession).where(AccountSession.token_hash == token_hash))
+    await db.commit()
+
+
 async def get_current_account(
     response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
     db: AsyncSession = Depends(get_db),
 ) -> Account:
     if not session_token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        clear_session_cookie(response)
+        raise authentication_error("Not authenticated")
 
     token_hash = hash_session_token(session_token)
     session_result = await db.execute(
@@ -84,11 +151,15 @@ async def get_current_account(
     )
     account_id = session_result.scalar_one_or_none()
     if not account_id:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
+        await destroy_session(db, token_hash)
+        clear_session_cookie(response)
+        raise authentication_error("Invalid or expired session")
 
-    account = await db.get(Account, account_id)
+    account = await load_account_context(db, account_id)
     if not account:
-        raise HTTPException(status_code=401, detail="Invalid session account")
+        await destroy_session(db, token_hash)
+        clear_session_cookie(response)
+        raise authentication_error("Invalid session account")
 
     await db.execute(
         update(AccountSession)
@@ -98,7 +169,6 @@ async def get_current_account(
     await db.commit()
     set_session_cookie(response, session_token)
 
-    await db.refresh(account, attribute_names=["role"])
     return account
 
 
@@ -118,11 +188,13 @@ async def get_optional_account(
     )
     account_id = session_result.scalar_one_or_none()
     if not account_id:
+        await destroy_session(db, token_hash)
         clear_session_cookie(response)
         return None
 
-    account = await db.get(Account, account_id)
+    account = await load_account_context(db, account_id)
     if not account:
+        await destroy_session(db, token_hash)
         clear_session_cookie(response)
         return None
 
@@ -134,7 +206,6 @@ async def get_optional_account(
     await db.commit()
     set_session_cookie(response, session_token)
 
-    await db.refresh(account, attribute_names=["role"])
     return account
 
 
@@ -148,34 +219,84 @@ async def get_or_create_role(db: AsyncSession, name: str) -> UserRole:
     return role
 
 
+async def get_or_create_organisation(
+    db: AsyncSession,
+    name: str,
+    created_by_id: int,
+) -> tuple[Organisation, bool]:
+    organization_name = normalize_organisation_name(name)
+    normalized_name = normalized_organisation_key(name)
+    result = await db.execute(
+        select(Organisation).where(Organisation.normalized_name == normalized_name)
+    )
+    organisation = result.scalar_one_or_none()
+    if organisation:
+        return organisation, False
+
+    organisation = Organisation(
+        name=organization_name,
+        normalized_name=normalized_name,
+        organisation_type="parking_operator",
+        created_by_id=created_by_id,
+    )
+    db.add(organisation)
+    await db.flush()
+    return organisation, True
+
+
 @router.post("/register", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(response: Response, body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(select(Account).where(Account.email == body.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    first_account = await db.execute(select(Account.id).limit(1))
-    role_name = "administrator" if first_account.scalar_one_or_none() is None else "guest"
-    role = await get_or_create_role(db, role_name)
+    name = normalize_name(body.name)
+    if not name:
+        raise HTTPException(status_code=422, detail="Name is required")
+
+    role = await get_or_create_role(db, body.role)
 
     account = Account(
         email=body.email,
         password=pwd_context.hash(body.password),
-        first_name=body.first_name,
-        last_name=body.last_name,
+        name=name,
+        phone=normalize_optional(body.phone),
         role_id=role.id,
     )
     db.add(account)
-    await db.commit()
-    await db.refresh(account)
+    await db.flush()
 
-    await db.refresh(account, attribute_names=["role"])
-    return account_response(account)
+    if body.role == "private":
+        organisation, created = await get_or_create_organisation(
+            db,
+            body.organisation_name or "",
+            account.id,
+        )
+        db.add(
+            OrganisationMembership(
+                account_id=account.id,
+                organisation_id=organisation.id,
+                membership_role="owner" if created else "associate",
+            )
+        )
+
+    await db.commit()
+
+    account_with_context = await load_account_context(db, account.id)
+    if not account_with_context:
+        raise HTTPException(status_code=500, detail="Registered account could not be loaded")
+    token, _ = await create_session(db, account_with_context)
+    set_session_cookie(response, token)
+    return account_response(account_with_context)
 
 
 @router.post("/login", response_model=AccountResponse)
 async def login(response: Response, body: LoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Account).where(Account.email == body.email))
+    result = await db.execute(
+        select(Account)
+        .options(*account_context_options())
+        .where(Account.email == body.email)
+    )
     account = result.scalar_one_or_none()
 
     if not account or not pwd_context.verify(body.password, account.password):
@@ -183,7 +304,6 @@ async def login(response: Response, body: LoginRequest, db: AsyncSession = Depen
 
     token, _ = await create_session(db, account)
     set_session_cookie(response, token)
-    await db.refresh(account, attribute_names=["role"])
     return account_response(account)
 
 
