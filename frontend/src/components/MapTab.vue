@@ -104,7 +104,7 @@ function renderMarkers() {
 
   filteredLots.value.forEach(lot => {
     const color = colorForOccupancy(lot.occupied, lot.total)
-    const free = lot.total - lot.occupied
+    const free = lot.occupied
     const markerType = primarySpaceType(lot)
     const icon = L.divIcon({
       className: '',
