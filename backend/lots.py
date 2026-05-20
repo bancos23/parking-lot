@@ -115,6 +115,7 @@ def lot_response(lot: ParkingLot) -> ParkingLotResponse:
         hourly_rate=lot.hourly_rate,
         is_free=lot.is_free,
         open_hours=lot.open_hours,
+        payment_link=lot.payment_link,
         cameras=[ParkingLotCameraResponse.model_validate(camera) for camera in lot.cameras],
     )
 
@@ -154,6 +155,7 @@ async def create_lot(
     lot_state = body.state.strip().lower()
     open_hours = normalize_optional_text(body.open_hours) or "24/7"
     owner_name = normalize_optional_text(body.owner_name) or default_owner_name(account)
+    payment_link = normalize_optional_text(body.payment_link)
     hourly_rate = 0 if body.is_free else body.hourly_rate
     cameras = [normalize_camera_payload(camera) for camera in body.cameras]
 
@@ -181,6 +183,7 @@ async def create_lot(
         hourly_rate=hourly_rate,
         is_free=body.is_free or hourly_rate == 0,
         open_hours=open_hours,
+        payment_link=payment_link,
     )
     lot.cameras = [
         ParkingLotCamera(
@@ -266,6 +269,8 @@ async def update_lot(
             lot.hourly_rate = 0
     if "open_hours" in update:
         lot.open_hours = normalize_optional_text(update["open_hours"]) or "24/7"
+    if "payment_link" in update:
+        lot.payment_link = normalize_optional_text(update["payment_link"])
 
     await db.commit()
 

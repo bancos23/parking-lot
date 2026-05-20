@@ -147,6 +147,7 @@ SCHEMA_UPGRADE_STATEMENTS = [
     "ALTER TABLE parking_lots ADD COLUMN IF NOT EXISTS open_hours VARCHAR(100) DEFAULT '24/7'",
     "UPDATE parking_lots SET open_hours = '24/7' WHERE open_hours IS NULL",
     "ALTER TABLE parking_lots ALTER COLUMN open_hours SET NOT NULL",
+    "ALTER TABLE parking_lots ADD COLUMN IF NOT EXISTS payment_link VARCHAR(500)",
     "ALTER TABLE parking_spaces ADD COLUMN IF NOT EXISTS parking_lot_id INTEGER REFERENCES parking_lots(id)",
     "ALTER TABLE parking_spaces ADD COLUMN IF NOT EXISTS camera_id INTEGER REFERENCES parking_lot_cameras(id)",
     "ALTER TABLE parking_spaces ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 0",

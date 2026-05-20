@@ -66,6 +66,7 @@ function newLot() {
     owner: '',
     rate: 2,
     hours: '24/7',
+    paymentLink: '',
     cameras: [
       {
         name: 'Panoramic camera',

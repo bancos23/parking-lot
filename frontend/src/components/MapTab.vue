@@ -148,6 +148,11 @@ function zoomBy(delta) {
   refreshMapLayers()
 }
 
+function openPaymentLink(lot) {
+  if (!lot?.paymentLink) return
+  window.location.assign(lot.paymentLink)
+}
+
 onMounted(async () => {
   await nextTick()
   isUnmounting = false
@@ -317,7 +322,8 @@ watch(selectedId, () => {
 
         <div class="lot-detail-actions">
           <button class="btn" type="button" @click="openDirections(selected.lat, selected.lng)">{{ t('lot.navigate') }}</button>
-          <button class="btn" type="button">{{ t('lot.reserve') }}</button>
+          <button class="btn btn-primary" type="button" :disabled="!selected.paymentLink"
+            @click="openPaymentLink(selected)">{{ t('lot.pay_now') }}</button>
           <button v-if="canViewCamera && selectedCamera" class="btn btn-primary btn-live-camera" type="button"
             @click="cameraPreviewOpen = true">
             {{ t('lot.live_camera') }}

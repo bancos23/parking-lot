@@ -131,6 +131,7 @@ class ParkingLot(Base):
     hourly_rate: Mapped[float] = mapped_column(Float, default=0, nullable=False)
     is_free: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     open_hours: Mapped[str] = mapped_column(String(100), default="24/7", nullable=False)
+    payment_link: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

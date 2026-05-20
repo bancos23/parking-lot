@@ -89,6 +89,8 @@ function save() {
           <div class="field"><label>{{ t('form.hours') }}</label><input v-model="form.hours"
               :placeholder="t('form.hours.placeholder')"></div>
         </div>
+        <div class="field"><label>{{ t('form.payment_link') }}</label><input v-model="form.paymentLink" type="url"
+            :placeholder="t('form.payment_link.placeholder')"></div>
         <div v-if="form._isNew && primaryCamera" class="field-group">
           <div class="field-group-title">{{ t('form.camera.title') }}</div>
           <div class="field-row">

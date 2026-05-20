@@ -60,6 +60,7 @@ function normalizeLot(raw) {
     owner: raw.owner_name || '',
     rate,
     hours: raw.open_hours || '24/7',
+    paymentLink: raw.payment_link || '',
     cameras: Array.isArray(raw.cameras) ? raw.cameras : [],
     revenue: Number(raw.revenue ?? 0),
   }
@@ -87,6 +88,7 @@ function lotPayload(lot, { includeCameras = false } = {}) {
     hourly_rate: rate,
     is_free: rate === 0,
     open_hours: lot.hours || '24/7',
+    payment_link: lot.paymentLink || null,
   }
 
   if (includeCameras) {

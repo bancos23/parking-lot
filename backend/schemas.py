@@ -178,6 +178,7 @@ class ParkingLotCreate(BaseModel):
     hourly_rate: float = Field(default=0, ge=0)
     is_free: bool = False
     open_hours: str = "24/7"
+    payment_link: str | None = Field(default=None, max_length=500)
     cameras: list[ParkingLotCameraCreate] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -199,6 +200,7 @@ class ParkingLotUpdate(BaseModel):
     hourly_rate: float | None = Field(default=None, ge=0)
     is_free: bool | None = None
     open_hours: str | None = None
+    payment_link: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
     def validate_coordinate_pair(self):
@@ -221,6 +223,7 @@ class ParkingLotResponse(BaseModel):
     hourly_rate: float
     is_free: bool
     open_hours: str
+    payment_link: str | None
     cameras: list[ParkingLotCameraResponse]
 
     model_config = {"from_attributes": True}
