@@ -150,7 +150,7 @@ function zoomBy(delta) {
 
 function openPaymentLink(lot) {
   if (!lot?.paymentLink) return
-  window.location.assign(lot.paymentLink)
+  window.open(lot.paymentLink, '_blank')
 }
 
 onMounted(async () => {
@@ -252,9 +252,12 @@ watch(selectedId, () => {
             <div>/ {{ lot.total }}</div>
           </div>
         </div>
-        <div v-if="loading" class="empty-state">Se încarcă...</div>
+        <div v-if="loading" class="empty-state"><span class="spinner"></span></div>
         <div v-else-if="error" class="empty-state">{{ error }}</div>
-        <div v-else-if="filteredLots.length === 0" class="empty-state">{{ t('map.empty') }}</div>
+        <div v-else-if="filteredLots.length === 0" class="empty-state">
+          <div class="empty-state-icon">🅿️</div>
+          <div class="empty-state-text">{{ t('map.empty') }}</div>
+        </div>
       </div>
 
       <div class="legend">
@@ -322,8 +325,7 @@ watch(selectedId, () => {
 
         <div class="lot-detail-actions">
           <button class="btn" type="button" @click="openDirections(selected.lat, selected.lng)">{{ t('lot.navigate') }}</button>
-          <button class="btn btn-primary" type="button" :disabled="!selected.paymentLink"
-            @click="openPaymentLink(selected)">{{ t('lot.pay_now') }}</button>
+          <a class="btn btn-primary" :href="selected.paymentLink" target="_blank" rel="noopener noreferrer">{{ t('lot.pay_now') }}</a>
           <button v-if="canViewCamera && selectedCamera" class="btn btn-primary btn-live-camera" type="button"
             @click="cameraPreviewOpen = true">
             {{ t('lot.live_camera') }}

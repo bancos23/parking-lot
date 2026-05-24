@@ -10,7 +10,7 @@ let loaded = false
 let pendingLoad = null
 
 function formatLotId(id) {
-  return `P${String(id).padStart(3, '0')}`
+  return String(id)
 }
 
 function normalizeSpaceType(type) {

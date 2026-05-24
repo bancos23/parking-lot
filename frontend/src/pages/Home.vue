@@ -18,9 +18,9 @@ const menuOpen = ref(false)
 const tweaks = reactive(loadTweaks())
 
 const tabs = computed(() => [
-    { v: 'map', l: t('tab.map'), icon: '⌖' },
-    { v: 'stats', l: t('tab.stats'), icon: '↗' },
-    { v: 'lots', l: t('tab.lots'), icon: '☷' },
+    { v: 'map', l: t('tab.map'), icon: '📍' },
+    { v: 'stats', l: t('tab.stats'), icon: '📈' },
+    { v: 'lots', l: t('tab.lots'), icon: '🅿️' },
 ])
 
 function loadTweaks() {

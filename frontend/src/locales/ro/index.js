@@ -85,7 +85,7 @@ const ro = {
         'map.legend.free': 'Liber',
         'map.legend.partial': 'Parțial',
         'map.legend.full': 'Plin',
-        'map.empty': 'Niciun rezultat',
+        'map.empty': 'Nicio parcare găsită',
         'map.lots_count': 'parcări',
 
         'spot.type.electric': '⚡ EV',

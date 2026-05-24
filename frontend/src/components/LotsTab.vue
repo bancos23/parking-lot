@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { colorForOccupancy, spaceTypeGlyph } from '@frontend/data/parkingData'
-import { hasSpaceType, primarySpaceType, useParkingLots } from '@frontend/composables/parkingLots'
+import { colorForOccupancy } from '@frontend/data/parkingData'
+import { hasSpaceType, useParkingLots } from '@frontend/composables/parkingLots'
 import { useT } from '@frontend/composables/i18n'
 import LotForm from '@frontend/components/LotForm.vue'
 
@@ -105,7 +105,6 @@ function newLot() {
       <table class="lots-table">
         <thead>
           <tr>
-            <th style="width:32px"></th>
             <th>ID</th>
             <th>{{ t('lots.col.name') }}</th>
             <th>{{ t('lots.col.address') }}</th>
@@ -120,9 +119,6 @@ function newLot() {
         </thead>
         <tbody>
           <tr v-for="lot in filtered" :key="lot.id">
-            <td>
-              <div class="type-icon" :class="primarySpaceType(lot)">{{ spaceTypeGlyph(primarySpaceType(lot)) }}</div>
-            </td>
             <td class="mono muted">{{ lot.id }}</td>
             <td style="font-weight:500">{{ lot.name }}</td>
             <td class="muted small">{{ lot.address }}</td>
@@ -155,13 +151,13 @@ function newLot() {
             </td>
           </tr>
           <tr v-if="loading">
-            <td :colspan="canEdit ? 11 : 10" class="empty-row">Se încarcă...</td>
+            <td :colspan="canEdit ? 10 : 9" class="empty-row">Se încarcă...</td>
           </tr>
           <tr v-else-if="error">
-            <td :colspan="canEdit ? 11 : 10" class="empty-row">{{ error }}</td>
+            <td :colspan="canEdit ? 10 : 9" class="empty-row">{{ error }}</td>
           </tr>
           <tr v-else-if="filtered.length === 0">
-            <td :colspan="canEdit ? 11 : 10" class="empty-row">{{ t('lots.empty') }}</td>
+            <td :colspan="canEdit ? 10 : 9" class="empty-row">{{ t('lots.empty') }}</td>
           </tr>
         </tbody>
       </table>

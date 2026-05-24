@@ -88,7 +88,7 @@ const en = {
     'map.legend.free': 'Free',
     'map.legend.partial': 'Partial',
     'map.legend.full': 'Full',
-    'map.empty': 'No results',
+    'map.empty': 'No parking lots found',
     'map.lots_count': 'lots',
 
     'spot.type.electric': '⚡ EV',
