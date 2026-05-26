@@ -8,6 +8,7 @@ const en = {
     'tab.map': 'Map',
     'tab.stats': 'Statistics',
     'tab.lots': 'Parkings',
+    'tab.plates': 'Plates',
 
     'role.municipal': 'City',
     'role.private': 'Private',
@@ -271,6 +272,31 @@ const en = {
     'legal.support.sections.self_service.paragraphs.0': 'Before contacting support, refresh the page, confirm that your browser allows required permissions, and check whether your account role matches the action you are trying to perform.',
 
     'lang.label': 'Language',
+
+    'plates.title': 'Plate Detection',
+    'plates.sub': 'Upload a photo to detect license plates',
+    'plates.upload.title': 'Upload photo',
+    'plates.upload.hint': 'Drop an image here or click to select',
+    'plates.upload.formats': 'JPG, PNG, WebP · max 25 MB',
+    'plates.upload.too_large': 'Image too large (max 25 MB)',
+    'plates.detect': 'Detect plates',
+    'plates.detecting': 'Analyzing…',
+    'plates.results.title': 'Results',
+    'plates.results.count': 'plates detected',
+    'plates.results.none': 'No license plates detected in this image.',
+    'plates.results.plate': 'Plate',
+    'plates.results.confidence': 'Confidence',
+    'plates.results.bbox': 'Region',
+    'plates.history.title': 'Detection history',
+    'plates.history.loading': 'Loading history...',
+    'plates.history.empty': 'No images uploaded yet.',
+    'plates.history.clear': 'Clear search',
+    'plates.history.refresh': 'Refresh',
+    'plates.history.page': 'Page',
+    'plates.history.page_size': 'Rows per page',
+    'plates.search': 'Search license plate…',
+    'plates.poc.badge': 'Proof of Concept',
+    'plates.poc.info': 'This is a demonstration. Real detection will use live cameras and a dedicated OCR model.',
 }
 
 export default en

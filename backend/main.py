@@ -16,6 +16,7 @@ from detections import (
 from lots import router as lots_router
 from models import Account, UserRole
 from spaces import router as spaces_router
+from plates import router as plates_router, warm_up_plate_ocr
 
 DEFAULT_ROLES = ["municipal", "private", "guest", "administrator"]
 
@@ -253,6 +254,37 @@ SCHEMA_UPGRADE_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS ix_parking_space_detections_parking_space_id ON parking_space_detections (parking_space_id)",
     "CREATE INDEX IF NOT EXISTS ix_parking_space_detections_space_code ON parking_space_detections (space_code)",
     "CREATE INDEX IF NOT EXISTS ix_parking_space_detections_detected_at ON parking_space_detections (detected_at)",
+    """
+    CREATE TABLE IF NOT EXISTS license_plate_detection_history (
+        id SERIAL PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id),
+        source_file VARCHAR(255),
+        image_width INTEGER,
+        image_height INTEGER,
+        model VARCHAR(120),
+        detection_confidence DOUBLE PRECISION,
+        total_detections INTEGER DEFAULT 0 NOT NULL,
+        parsed_plates INTEGER DEFAULT 0 NOT NULL,
+        plate VARCHAR(40),
+        compact VARCHAR(30),
+        county_code VARCHAR(10),
+        county_name VARCHAR(120),
+        country_code VARCHAR(10),
+        country_name VARCHAR(120),
+        plate_type VARCHAR(30),
+        raw_ocr VARCHAR(120),
+        confidence DOUBLE PRECISION,
+        bounding_box JSONB,
+        raw_detection JSONB,
+        detected_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_license_plate_detection_history_account_id ON license_plate_detection_history (account_id)",
+    "CREATE INDEX IF NOT EXISTS ix_license_plate_detection_history_plate ON license_plate_detection_history (plate)",
+    "CREATE INDEX IF NOT EXISTS ix_license_plate_detection_history_compact ON license_plate_detection_history (compact)",
+    "CREATE INDEX IF NOT EXISTS ix_license_plate_detection_history_country_code ON license_plate_detection_history (country_code)",
+    "CREATE INDEX IF NOT EXISTS ix_license_plate_detection_history_detected_at ON license_plate_detection_history (detected_at)",
 ]
 
 
@@ -266,6 +298,7 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await ensure_schema_upgrades(conn)
+    warm_up_plate_ocr()
     async with async_session() as db:
         for role_name in DEFAULT_ROLES:
             exists = await db.execute(select(UserRole).where(UserRole.name == role_name))
@@ -296,6 +329,7 @@ app.include_router(auth_router)
 app.include_router(lots_router)
 app.include_router(spaces_router)
 app.include_router(detections_router)
+app.include_router(plates_router)
 
 @app.get("/api/test")
 def read_root():

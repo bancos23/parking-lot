@@ -39,6 +39,7 @@ class Account(Base):
         cascade="all, delete-orphan",
     )
     created_parking_cameras: Mapped[list["ParkingLotCamera"]] = relationship(back_populates="created_by")
+    license_plate_detections: Mapped[list["LicensePlateDetectionHistory"]] = relationship(back_populates="account")
 
 
 class AccountSession(Base):
@@ -186,3 +187,32 @@ class ParkingSpaceDetection(Base):
     parking_lot: Mapped["ParkingLot"] = relationship(back_populates="detections")
     camera: Mapped["ParkingLotCamera"] = relationship(back_populates="detections")
     space: Mapped[Optional["ParkingSpace"]] = relationship(back_populates="detections")
+
+
+class LicensePlateDetectionHistory(Base):
+    __tablename__ = "license_plate_detection_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
+    source_file: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    image_width: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    image_height: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    detection_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    total_detections: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    parsed_plates: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    plate: Mapped[Optional[str]] = mapped_column(String(40), nullable=True, index=True)
+    compact: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, index=True)
+    county_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    county_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    country_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, index=True)
+    country_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    plate_type: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    raw_ocr: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    bounding_box: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    raw_detection: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    account: Mapped["Account"] = relationship(back_populates="license_plate_detections")

@@ -339,3 +339,38 @@ class ParkingSpaceDetectionResponse(BaseModel):
 
 class DetectionHistoryResponse(BaseModel):
     detections: list[ParkingSpaceDetectionResponse]
+
+
+class LicensePlateDetectionHistoryItem(BaseModel):
+    id: int
+    account_id: int
+    source_file: str | None
+    image_width: int | None
+    image_height: int | None
+    model: str | None
+    detection_confidence: float | None
+    total_detections: int
+    parsed_plates: int
+    plate: str | None
+    compact: str | None
+    county_code: str | None
+    county_name: str | None
+    country_code: str | None
+    country_name: str | None
+    plate_type: str | None
+    raw_ocr: str | None
+    confidence: float | None
+    bounding_box: BoundingBox | None
+    raw_detection: dict[str, Any] | None
+    detected_at: datetime
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class LicensePlateDetectionHistoryResponse(BaseModel):
+    detections: list[LicensePlateDetectionHistoryItem]
+    page: int
+    limit: int
+    total: int
+    total_pages: int

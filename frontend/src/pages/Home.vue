@@ -1,12 +1,13 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import LangSwitcher from '../components/LangSwitcher.vue'
-import MapTab from '../components/MapTab.vue'
-import StatsTab from '../components/StatsTab.vue'
-import LotsTab from '../components/LotsTab.vue'
-import { useT } from '../composables/i18n'
-import { SESSION_EXPIRED_EVENT, useAuth } from '../stores/auth'
+import LangSwitcher from '@frontend/components/LangSwitcher.vue'
+import MapTab from '@frontend/components/MapTab.vue'
+import StatsTab from '@frontend/components/StatsTab.vue'
+import LotsTab from '@frontend/components/LotsTab.vue'
+import PlatesTab from '@frontend/components/PlatesTab.vue'
+import { useT } from '@frontend/composables/i18n'
+import { SESSION_EXPIRED_EVENT, useAuth } from '@frontend/stores/auth'
 
 const router = useRouter()
 const { t } = useT()
@@ -21,6 +22,7 @@ const tabs = computed(() => [
     { v: 'map', l: t('tab.map'), icon: '📍' },
     { v: 'stats', l: t('tab.stats'), icon: '📈' },
     { v: 'lots', l: t('tab.lots'), icon: '🅿️' },
+    { v: 'plates', l: t('tab.plates'), icon: '🔢' },
 ])
 
 function loadTweaks() {
@@ -243,6 +245,7 @@ onBeforeUnmount(() => {
             <MapTab v-if="tab === 'map'" :role="role" />
             <StatsTab v-if="tab === 'stats'" :role="role" />
             <LotsTab v-if="tab === 'lots'" :role="role" />
+            <PlatesTab v-if="tab === 'plates'" :role="role" />
         </main>
 
         <div v-if="tweaksOpen" class="tweaks-panel-host">

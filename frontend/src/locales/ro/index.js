@@ -5,6 +5,7 @@ const ro = {
         'tab.map': 'Hartă',
         'tab.stats': 'Statistici',
         'tab.lots': 'Parcări',
+        'tab.plates': 'Numere',
 
         'role.municipal': 'Primărie',
         'role.private': 'Privat',
@@ -285,6 +286,31 @@ const ro = {
         'legal.support.sections.self_service.paragraphs.0': 'Înainte de contactarea suportului, pagina trebuie reîmprospătată, permisiunile necesare în browser trebuie confirmate, iar rolul contului trebuie verificat pentru acțiunea încercată.',
 
         'lang.label': 'Limbă',
+
+        'plates.title': 'Detecție numere',
+        'plates.sub': 'Încarcă o fotografie pentru a detecta plăcuțele de înmatriculare',
+        'plates.upload.title': 'Încarcă fotografie',
+        'plates.upload.hint': 'Trage o imagine aici sau click pentru a selecta',
+        'plates.upload.formats': 'JPG, PNG, WebP · max 25 MB',
+        'plates.upload.too_large': 'Imagine prea mare (max 25 MB)',
+        'plates.detect': 'Detectează numere',
+        'plates.detecting': 'Se analizează…',
+        'plates.results.title': 'Rezultate',
+        'plates.results.count': 'plăcuțe detectate',
+        'plates.results.none': 'Nicio plăcuță detectată în această imagine.',
+        'plates.results.plate': 'Număr',
+        'plates.results.confidence': 'Încredere',
+        'plates.results.bbox': 'Regiune',
+        'plates.history.title': 'Istoric detecții',
+        'plates.history.loading': 'Se încarcă istoricul...',
+        'plates.history.empty': 'Nicio imagine încărcată încă.',
+        'plates.history.clear': 'Șterge căutarea',
+        'plates.history.refresh': 'Reîncarcă',
+        'plates.history.page': 'Pagina',
+        'plates.history.page_size': 'Rânduri pe pagină',
+        'plates.search': 'Caută numărul de înmatriculare…',
+        'plates.poc.badge': 'Proof of Concept',
+        'plates.poc.info': 'Aceasta este o demonstrație. Detecția reală va folosi camere live și un model OCR dedicat.',
 }
 
 export default ro

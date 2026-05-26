@@ -3,7 +3,7 @@ name = "parking-lot-backend"
 version = "0.1.0"
 description = ""
 authors = [{name = "Gabriel Bancos", email = "bancos.em.gabriel@student.utcluj.ro"}]
-requires-python = ">=3.14"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.136.1",
     "uvicorn[standard]>=0.46.0",
@@ -17,10 +17,13 @@ dependencies = [
     "numpy>=2.0.0",
     "opencv-python>=4.10.0",
     "ultralytics>=8.3.0",
+    "python-multipart>=0.0.9",
+    "paddleocr>=3.5.0",
+    "paddlepaddle>=3.3.1",
 ]
 
 [tool.setuptools]
-py-modules = ["main", "config", "database", "models", "schemas", "auth", "spaces", "lots", "detections"]
+py-modules = ["main", "config", "database", "models", "schemas", "auth", "spaces", "lots", "detections", "plates", "license"]
 
 [build-system]
 requires = ["setuptools>=75.0"]
