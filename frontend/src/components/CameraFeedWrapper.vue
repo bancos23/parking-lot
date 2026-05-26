@@ -32,6 +32,7 @@ const { expireSession } = useAuth()
 const stageRef = ref(null)
 const mediaRef = ref(null)
 const overlayCanvas = ref(null)
+const overlayStyle = ref({})
 const videoFailed = ref(false)
 const imageFailed = ref(false)
 const occupancy = ref(null)
@@ -93,13 +94,66 @@ function collectSpaceExtents(spaces) {
   return { maxX, maxY }
 }
 
+function normalizeFrameSize(frame) {
+  const width = Number(frame?.width || 0)
+  const height = Number(frame?.height || 0)
+  if (width > 0 && height > 0) {
+    return { width, height }
+  }
+  return null
+}
+
+function frameSizeFromSpaces(spaces) {
+  for (const space of spaces) {
+    const frame = normalizeFrameSize(space.polygon?.frame) || normalizeFrameSize(space.bounding_box?.frame)
+    if (frame) return frame
+  }
+
+  return null
+}
+
+function mediaIntrinsicSize() {
+  const media = mediaRef.value
+  const width = Number(media?.videoWidth || media?.naturalWidth || 0)
+  const height = Number(media?.videoHeight || media?.naturalHeight || 0)
+  if (width > 0 && height > 0) {
+    return { width, height }
+  }
+  return null
+}
+
+function containedMediaRect(containerWidth, containerHeight, sourceSize) {
+  if (!sourceSize || containerWidth <= 0 || containerHeight <= 0) {
+    return { left: 0, top: 0, width: containerWidth, height: containerHeight }
+  }
+
+  const containerRatio = containerWidth / containerHeight
+  const sourceRatio = sourceSize.width / sourceSize.height
+
+  if (sourceRatio > containerRatio) {
+    const height = containerWidth / sourceRatio
+    return {
+      left: 0,
+      top: (containerHeight - height) / 2,
+      width: containerWidth,
+      height,
+    }
+  }
+
+  const width = containerHeight * sourceRatio
+  return {
+    left: (containerWidth - width) / 2,
+    top: 0,
+    width,
+    height: containerHeight,
+  }
+}
+
 function overlayTransform(spaces) {
   const canvas = overlayCanvas.value
-  const stage = stageRef.value
-  if (!canvas || !stage) return null
+  if (!canvas) return null
 
   const { maxX, maxY } = collectSpaceExtents(spaces)
-  const rect = stage.getBoundingClientRect()
   const pixelRatio = window.devicePixelRatio || 1
 
   if (maxX <= 1 && maxY <= 1) {
@@ -109,7 +163,17 @@ function overlayTransform(spaces) {
     }
   }
 
-  if (maxX <= rect.width && maxY <= rect.height) {
+  const sourceSize = frameSizeFromSpaces(spaces) || mediaIntrinsicSize()
+  if (sourceSize) {
+    return {
+      x: value => Number(value || 0) * (canvas.width / sourceSize.width),
+      y: value => Number(value || 0) * (canvas.height / sourceSize.height),
+    }
+  }
+
+  const cssWidth = canvas.width / pixelRatio
+  const cssHeight = canvas.height / pixelRatio
+  if (maxX <= cssWidth && maxY <= cssHeight) {
     return {
       x: value => Number(value || 0) * pixelRatio,
       y: value => Number(value || 0) * pixelRatio,
@@ -123,13 +187,17 @@ function overlayTransform(spaces) {
 }
 
 function drawSpaceLabel(ctx, label, x, y, color) {
-  ctx.font = '600 12px Inter, system-ui, sans-serif'
+  const scale = window.devicePixelRatio || 1
+  const paddingX = 3 * scale
+  const paddingY = 2 * scale
+  const labelHeight = 14 * scale
+  ctx.font = `600 ${9 * scale}px Inter, system-ui, sans-serif`
   ctx.textBaseline = 'top'
-  const width = ctx.measureText(label).width + 10
-  ctx.fillStyle = 'rgba(5, 7, 13, 0.78)'
-  ctx.fillRect(x, y, width, 22)
+  const width = ctx.measureText(label).width + (paddingX * 2)
+  ctx.fillStyle = 'rgba(5, 7, 13, 0.72)'
+  ctx.fillRect(x, y, width, labelHeight)
   ctx.fillStyle = color
-  ctx.fillText(label, x + 5, y + 5)
+  ctx.fillText(label, x + paddingX, y + paddingY)
 }
 
 function drawOccupancyOverlay() {
@@ -149,7 +217,7 @@ function drawOccupancyOverlay() {
     const color = statusColor(space)
     ctx.strokeStyle = color
     ctx.fillStyle = `${color}33`
-    ctx.lineWidth = 3
+    ctx.lineWidth = 2 * (window.devicePixelRatio || 1)
 
     if (space.polygon?.points?.length) {
       const points = space.polygon.points
@@ -184,8 +252,16 @@ function syncOverlaySize() {
 
   const rect = stage.getBoundingClientRect()
   const pixelRatio = window.devicePixelRatio || 1
-  const width = Math.max(1, Math.round(rect.width * pixelRatio))
-  const height = Math.max(1, Math.round(rect.height * pixelRatio))
+  const mediaRect = containedMediaRect(rect.width, rect.height, mediaIntrinsicSize())
+  const width = Math.max(1, Math.round(mediaRect.width * pixelRatio))
+  const height = Math.max(1, Math.round(mediaRect.height * pixelRatio))
+
+  overlayStyle.value = {
+    left: `${mediaRect.left}px`,
+    top: `${mediaRect.top}px`,
+    width: `${mediaRect.width}px`,
+    height: `${mediaRect.height}px`,
+  }
 
   if (canvas.width !== width) {
     canvas.width = width
@@ -299,6 +375,7 @@ watch(occupancy, () => nextTick(drawOccupancyOverlay), { deep: true })
 defineExpose({
   mediaRef,
   overlayCanvas,
+  overlayStyle,
   syncOverlaySize,
 })
 </script>
@@ -322,7 +399,8 @@ defineExpose({
         crossorigin="anonymous" @error="imageFailed = true" @load="syncOverlaySize" />
 
       <video v-else-if="!isRtspFeed && !videoFailed" ref="mediaRef" class="feed-media" :src="normalizedUrl" controls
-        muted playsinline crossorigin="anonymous" @error="videoFailed = true" @loadedmetadata="syncOverlaySize" />
+        muted playsinline crossorigin="anonymous" @error="videoFailed = true" @loadedmetadata="syncOverlaySize"
+        @loadeddata="syncOverlaySize" />
 
       <iframe v-else-if="showFrameFallback" class="feed-frame" :src="normalizedUrl" :title="cameraName" loading="lazy"
         referrerpolicy="no-referrer" />
@@ -331,7 +409,7 @@ defineExpose({
         Preview unavailable for this stream.
       </div>
 
-      <canvas ref="overlayCanvas" class="feed-yolo-overlay" aria-hidden="true"></canvas>
+      <canvas ref="overlayCanvas" class="feed-yolo-overlay" :style="overlayStyle" aria-hidden="true"></canvas>
     </div>
 
     <div class="feed-status-bar">

@@ -69,11 +69,17 @@ class GeoCoordinate(BaseModel):
     longitude: float = Field(ge=-180, le=180)
 
 
+class ImageFrame(BaseModel):
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+
+
 class BoundingBox(BaseModel):
     x: float = Field(ge=0, validation_alias=AliasChoices("x", "x_min"))
     y: float = Field(ge=0, validation_alias=AliasChoices("y", "y_min"))
     width: float = Field(gt=0)
     height: float = Field(gt=0)
+    frame: ImageFrame | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -99,6 +105,7 @@ ImagePoint = tuple[ImageCoordinate, ImageCoordinate]
 
 class ParkingSpacePolygon(BaseModel):
     points: list[ImagePoint] = Field(min_length=3)
+    frame: ImageFrame | None = None
 
 
 class ParkingSpaceCreate(BaseModel):
