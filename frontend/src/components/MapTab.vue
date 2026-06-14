@@ -104,7 +104,7 @@ function renderMarkers() {
 
   filteredLots.value.forEach(lot => {
     const color = colorForOccupancy(lot.occupied, lot.total)
-    const free = lot.occupied
+    const occupied = lot.occupied
     const markerType = primarySpaceType(lot)
     const icon = L.divIcon({
       className: '',
@@ -118,7 +118,7 @@ function renderMarkers() {
       <div style="font-family: var(--font-sans); min-width:160px;">
         <div style="font-weight:600; font-size:13px; margin-bottom:2px;">${lot.name}</div>
         <div style="font-size:11px; color: var(--text-muted); margin-bottom:6px;">${lot.address}</div>
-        <div style="font-family: var(--font-mono); font-size:12px;"><strong style="color:${color}">${free}</strong> / ${lot.total} ${t('lot.spots_free')}</div>
+        <div style="font-family: var(--font-mono); font-size:12px;"><strong style="color:${color}">${occupied}</strong> / ${lot.total} ${t('lot.spots_occupied')}</div>
       </div>
     `)
     marker.on('click', () => { selectedId.value = lot.id })

@@ -128,7 +128,7 @@ function submit() {
       </div>
 
       <div class="auth-foot">
-        <span>© 2026 Primăria Baia Mare</span><span>·</span>
+        <span>© 2026 Parking App</span><span>·</span>
         <RouterLink :to="{ name: 'terms' }">{{ t('auth.foot.terms') }}</RouterLink>
         <RouterLink :to="{ name: 'privacy' }">{{ t('auth.foot.privacy') }}</RouterLink>
         <RouterLink :to="{ name: 'support' }">{{ t('auth.foot.support') }}</RouterLink>
@@ -166,9 +166,6 @@ function submit() {
               <label>{{ t('auth.email') }}</label>
               <div class="input-wrap"><span class="input-ic">✉</span><input v-model="email" type="email"
                   :placeholder="t('auth.email.placeholder')" :autofocus="mode === 'login'"></div>
-              <div v-if="mode === 'login'" class="field-hint">{{ t('auth.email.hint') }}
-                <code>primaria@baiamare.ro</code>, <code>admin@…</code>).
-              </div>
             </div>
 
             <div class="field">

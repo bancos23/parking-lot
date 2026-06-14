@@ -8,6 +8,7 @@ const loading = ref(false)
 const error = ref('')
 let loaded = false
 let pendingLoad = null
+const loadRetryDelays = [500, 1000, 1500, 2500, 4000]
 
 function formatLotId(id) {
   return String(id)
@@ -120,10 +121,36 @@ async function apiRequest(url, options = {}) {
       : Array.isArray(data?.detail)
         ? data.detail.map(item => item.msg || item.message || String(item)).join(' ')
         : data?.message
-    throw new Error(detail || 'Parking request failed.')
+    const error = new Error(detail || 'Parking request failed.')
+    error.status = response.status
+    throw error
   }
 
   return data
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function shouldRetryLoad(error) {
+  return !error?.status || error.status >= 500
+}
+
+async function fetchLotsWithStartupRetry() {
+  let lastError
+
+  for (let attempt = 0; attempt <= loadRetryDelays.length; attempt += 1) {
+    try {
+      return await apiRequest('/api/lots')
+    } catch (error) {
+      lastError = error
+      if (!shouldRetryLoad(error) || attempt === loadRetryDelays.length) break
+      await wait(loadRetryDelays[attempt])
+    }
+  }
+
+  throw lastError
 }
 
 async function loadLots({ force = false } = {}) {
@@ -132,7 +159,7 @@ async function loadLots({ force = false } = {}) {
 
   loading.value = true
   error.value = ''
-  pendingLoad = apiRequest('/api/lots')
+  pendingLoad = fetchLotsWithStartupRetry()
     .then((data) => {
       lots.value = (data?.lots || []).map(normalizeLot)
       loaded = true

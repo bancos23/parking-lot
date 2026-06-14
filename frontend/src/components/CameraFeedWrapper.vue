@@ -48,6 +48,26 @@ const normalizedUrl = computed(() => props.streamUrl.trim())
 const lowerUrl = computed(() => normalizedUrl.value.toLowerCase())
 const isImageFeed = computed(() => /\.(mjpeg|mjpg|jpg|jpeg|png|webp|gif)(\?.*)?(#.*)?$/.test(lowerUrl.value))
 const isRtspFeed = computed(() => lowerUrl.value.startsWith('rtsp://') || lowerUrl.value.startsWith('rtsps://'))
+const youtubeVideoId = computed(() => extractYouTubeVideoId(normalizedUrl.value))
+const isYouTubeFeed = computed(() => Boolean(youtubeVideoId.value))
+const iframeUrl = computed(() => {
+  if (youtubeVideoId.value) {
+    const params = new URLSearchParams({
+      autoplay: '1',
+      mute: '1',
+      playsinline: '1',
+      rel: '0',
+    })
+
+    if (typeof window !== 'undefined' && window.location?.origin)
+      params.set('origin', window.location.origin)
+
+    return `https://www.youtube.com/embed/${youtubeVideoId.value}?${params.toString()}`
+  }
+
+  return normalizedUrl.value
+})
+const iframeReferrerPolicy = computed(() => (isYouTubeFeed.value ? 'strict-origin-when-cross-origin' : 'no-referrer'))
 const cameraTypeLabel = computed(() => props.cameraType.replace(/_/g, ' '))
 const cameraTotalSpaces = computed(() => Number(occupancy.value?.camera_total_spots ?? 0))
 const cameraOccupiedSpaces = computed(() => Number(occupancy.value?.camera_occupied_spots ?? 0))
@@ -64,8 +84,51 @@ const updatedAtLabel = computed(() => {
   }).format(new Date(occupancy.value.generated_at))
 })
 const showFrameFallback = computed(() => {
-  return !isRtspFeed.value && ((!isImageFeed.value && videoFailed.value) || (isImageFeed.value && imageFailed.value))
+  return isYouTubeFeed.value || (
+    !isRtspFeed.value && ((!isImageFeed.value && videoFailed.value) || (isImageFeed.value && imageFailed.value))
+  )
 })
+
+function extractYouTubeVideoId(rawUrl) {
+  if (!rawUrl) return ''
+
+  try {
+    const url = parseFeedUrl(rawUrl)
+    const host = url.hostname.replace(/^www\./, '').toLowerCase()
+    const pathParts = url.pathname.split('/').filter(Boolean)
+
+    if (host === 'youtu.be') {
+      return sanitizeYouTubeVideoId(pathParts[0])
+    }
+
+    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
+      const byQuery = sanitizeYouTubeVideoId(url.searchParams.get('v'))
+      if (byQuery) return byQuery
+
+      const embedIndex = pathParts.findIndex(part => ['embed', 'live', 'shorts'].includes(part))
+      if (embedIndex >= 0) {
+        return sanitizeYouTubeVideoId(pathParts[embedIndex + 1])
+      }
+    }
+  } catch {
+    return ''
+  }
+
+  return ''
+}
+
+function parseFeedUrl(rawUrl) {
+  try {
+    return new URL(rawUrl)
+  } catch {
+    return new URL(`https://${rawUrl}`)
+  }
+}
+
+function sanitizeYouTubeVideoId(value) {
+  const match = String(value || '').match(/^[\w-]{11}$/)
+  return match?.[0] || ''
+}
 
 function statusColor(space) {
   if (!space.is_active || space.status === 'out_of_service') return '#9ca3af'
@@ -274,10 +337,26 @@ function syncOverlaySize() {
   drawOccupancyOverlay()
 }
 
+function tryAutoplayMedia() {
+  const media = mediaRef.value
+  if (typeof media?.play !== 'function') return
+
+  media.muted = true
+  const playPromise = media.play()
+  if (typeof playPromise?.catch === 'function') {
+    playPromise.catch(() => { })
+  }
+}
+
+function handleVideoReady() {
+  syncOverlaySize()
+  tryAutoplayMedia()
+}
+
 function resetFeedState() {
   videoFailed.value = false
   imageFailed.value = false
-  nextTick(syncOverlaySize)
+  nextTick(handleVideoReady)
 }
 
 function stopOccupancyPolling() {
@@ -398,12 +477,14 @@ defineExpose({
       <img v-if="isImageFeed && !imageFailed" ref="mediaRef" class="feed-media" :src="normalizedUrl" :alt="cameraName"
         crossorigin="anonymous" @error="imageFailed = true" @load="syncOverlaySize" />
 
-      <video v-else-if="!isRtspFeed && !videoFailed" ref="mediaRef" class="feed-media" :src="normalizedUrl" controls
-        muted playsinline crossorigin="anonymous" @error="videoFailed = true" @loadedmetadata="syncOverlaySize"
-        @loadeddata="syncOverlaySize" />
+      <video v-else-if="!isRtspFeed && !isYouTubeFeed && !videoFailed" ref="mediaRef" class="feed-media"
+        :src="normalizedUrl" controls autoplay muted playsinline preload="auto" crossorigin="anonymous"
+        @error="videoFailed = true" @loadedmetadata="handleVideoReady" @loadeddata="handleVideoReady"
+        @canplay="handleVideoReady" />
 
-      <iframe v-else-if="showFrameFallback" class="feed-frame" :src="normalizedUrl" :title="cameraName" loading="lazy"
-        referrerpolicy="no-referrer" />
+      <iframe v-else-if="showFrameFallback" class="feed-frame" :src="iframeUrl" :title="cameraName" loading="lazy"
+        :referrerpolicy="iframeReferrerPolicy" allowfullscreen
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" />
 
       <div v-else class="feed-placeholder">
         Preview unavailable for this stream.

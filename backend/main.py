@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi import Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 
 from auth import get_optional_account, router as auth_router
 from database import engine, async_session, Base
@@ -14,7 +14,7 @@ from detections import (
     stop_occupancy_detection_scheduler,
 )
 from lots import router as lots_router
-from models import Account, UserRole
+from models import Account, AccountSession, UserRole
 from spaces import router as spaces_router
 from plates import router as plates_router, warm_up_plate_ocr
 
@@ -293,11 +293,18 @@ async def ensure_schema_upgrades(conn) -> None:
         await conn.execute(text(statement))
 
 
+async def clear_startup_sessions() -> None:
+    async with async_session() as db:
+        await db.execute(delete(AccountSession))
+        await db.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await ensure_schema_upgrades(conn)
+    await clear_startup_sessions()
     warm_up_plate_ocr()
     async with async_session() as db:
         for role_name in DEFAULT_ROLES:

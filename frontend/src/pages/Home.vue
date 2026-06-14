@@ -5,7 +5,6 @@ import LangSwitcher from '@frontend/components/LangSwitcher.vue'
 import MapTab from '@frontend/components/MapTab.vue'
 import StatsTab from '@frontend/components/StatsTab.vue'
 import LotsTab from '@frontend/components/LotsTab.vue'
-import PlatesTab from '@frontend/components/PlatesTab.vue'
 import { useT } from '@frontend/composables/i18n'
 import { SESSION_EXPIRED_EVENT, useAuth } from '@frontend/stores/auth'
 
@@ -17,12 +16,13 @@ const tab = ref('map')
 const tweaksOpen = ref(false)
 const menuOpen = ref(false)
 const tweaks = reactive(loadTweaks())
+const canLogout = computed(() => role.value !== 'guest')
+const canSwitchRole = computed(() => role.value !== 'guest')
 
 const tabs = computed(() => [
     { v: 'map', l: t('tab.map'), icon: '📍' },
     { v: 'stats', l: t('tab.stats'), icon: '📈' },
     { v: 'lots', l: t('tab.lots'), icon: '🅿️' },
-    { v: 'plates', l: t('tab.plates'), icon: '🔢' },
 ])
 
 function loadTweaks() {
@@ -89,6 +89,17 @@ async function logout() {
     await logoutUser({ remote: true })
     menuOpen.value = false
     router.push('/login')
+}
+
+async function handleUserChipClick() {
+    if (role.value === 'guest') {
+        await logoutUser()
+        menuOpen.value = false
+        router.push('/login')
+        return
+    }
+
+    menuOpen.value = !menuOpen.value
 }
 
 function handleSessionExpired() {
@@ -161,7 +172,7 @@ onBeforeUnmount(() => {
                 <LangSwitcher />
             </div>
 
-            <div class="role-switch desktop-only" title="Switch role (demo)">
+            <div v-if="canSwitchRole" class="role-switch desktop-only" title="Switch role (demo)">
                 <button type="button" :class="{ active: role === 'municipal' }" @click="setRole('municipal')">
                     {{ t('role.municipal') }}
                 </button>
@@ -173,16 +184,18 @@ onBeforeUnmount(() => {
                 </button>
             </div>
 
-            <div class="user-chip" :title="user?.email" @click="menuOpen = !menuOpen">
+            <div class="user-chip" :title="user?.email" @click="handleUserChipClick">
                 <div class="avatar">
                     {{ (user?.name || user?.email || '').slice(0, 2).toUpperCase() }}
                 </div>
                 <span class="name desktop-only">
                     {{ user?.name || user?.email?.split('@')[0] }}
                 </span>
+                <template v-if="canLogout">
                 <button class="icon-btn desktop-only logout-mini" type="button" title="Ieșire" @click.stop="logout">
                     ↪
                 </button>
+                </template>
             </div>
 
             <template v-if="menuOpen">
@@ -206,7 +219,7 @@ onBeforeUnmount(() => {
                         <LangSwitcher />
                     </div>
 
-                    <div class="mm-section">
+                    <div v-if="canSwitchRole" class="mm-section">
                         <div class="mm-label">{{ t('role.title') }}</div>
 
                         <button v-for="item in [
@@ -223,7 +236,7 @@ onBeforeUnmount(() => {
                         </button>
                     </div>
 
-                    <div class="mm-section">
+                    <div v-if="canLogout" class="mm-section">
                         <button class="mm-item danger" type="button" @click="logout">
                             <div class="mm-item-l">{{ t('menu.logout') }}</div>
                             <span>↪</span>
@@ -245,7 +258,6 @@ onBeforeUnmount(() => {
             <MapTab v-if="tab === 'map'" :role="role" />
             <StatsTab v-if="tab === 'stats'" :role="role" />
             <LotsTab v-if="tab === 'lots'" :role="role" />
-            <PlatesTab v-if="tab === 'plates'" :role="role" />
         </main>
 
         <div v-if="tweaksOpen" class="tweaks-panel-host">

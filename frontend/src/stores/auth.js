@@ -95,7 +95,8 @@ export function useAuth() {
             if (data) login(data)
             return true
         } catch {
-            return Boolean(state.user)
+            expireSession()
+            return false
         }
     }
 

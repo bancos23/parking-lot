@@ -38,3 +38,6 @@ Thumbs.db
 # Misc
 backend/*.pt
 backend/.paddlex/
+backend/.paddlex_local/
+
+*.MD

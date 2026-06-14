@@ -3,7 +3,11 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useT } from '@frontend/composables/i18n'
 import { useAuth } from '@frontend/stores/auth'
 
-const props = defineProps({ role: { type: String, default: 'guest' } })
+const props = defineProps({
+  role: { type: String, default: 'guest' },
+  embedded: { type: Boolean, default: false },
+  lot: { type: Object, default: null },
+})
 const { t } = useT()
 const { expireSession } = useAuth()
 
@@ -249,8 +253,8 @@ watch(searchQuery, scheduleHistoryLoad)
 </script>
 
 <template>
-  <div class="plates-wrap">
-    <div class="plates-head">
+  <div class="plates-wrap" :class="{ embedded }">
+    <div v-if="!embedded" class="plates-head">
       <div>
         <h1>{{ t('plates.title') }}</h1>
         <div class="sub">{{ t('plates.sub') }}</div>

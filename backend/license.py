@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 
 _BACKEND_DIR = Path(__file__).resolve().parent
-os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(_BACKEND_DIR / ".paddlex"))
+os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(_BACKEND_DIR / ".paddlex_local"))
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")
 
