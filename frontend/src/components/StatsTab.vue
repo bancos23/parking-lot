@@ -10,12 +10,23 @@ import DonutChart from '@frontend/components/charts/DonutChart.vue'
 
 const { t } = useT()
 const range = ref('7d')
+const forecastData = ref(null)
 const { lots, loadLots } = useParkingLots()
 const { HOURLY, WEEK, REVENUE, ANOMALIES } = PARKING_DATA
 
 onMounted(() => {
   loadLots().catch(() => {})
+  loadOccupancyForecast().catch(() => {})
 })
+
+async function loadOccupancyForecast() {
+  const response = await fetch('/api/stats/occupancy-forecast?hours=24', {
+    credentials: 'include',
+  })
+
+  if (!response.ok) return
+  forecastData.value = await response.json()
+}
 
 function heatColor(v) {
   if (v < 33) return `rgba(0, 61, 165, ${0.15 + (v / 33) * 0.55})`
@@ -39,8 +50,25 @@ const stats = computed(() => {
 
 const leaderboard = computed(() => [...lots.value].filter(l => l.state === 'enabled').sort((a, b) => b.occupied - a.occupied).slice(0, 6))
 const maxLb = computed(() => Math.max(1, ...leaderboard.value.map(l => l.occupied)))
-const forecast = computed(() => HOURLY.map((v, i) => Math.min(100, Math.max(5, v + Math.sin(i * 0.6) * 4 + 2))))
+const fallbackForecast = computed(() => HOURLY.map((v, i) => Math.min(100, Math.max(5, v + Math.sin(i * 0.6) * 4 + 2))))
 const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+const actualSeries = computed(() => {
+  const values = forecastData.value?.actual?.map(item => Number(item.occupancy))
+  return values?.length === HOURLY.length ? values : HOURLY
+})
+const forecastSeries = computed(() => {
+  const values = forecastData.value?.forecast?.map(item => Number(item.occupancy))
+  return values?.length === HOURLY.length ? values : fallbackForecast.value
+})
+const forecastLabels = computed(() => {
+  const labels = forecastData.value?.forecast?.map(item => item.label)
+  return labels?.length === HOURLY.length ? labels : hours
+})
+const forecastSubtitle = computed(() => {
+  if (forecastData.value?.trained) return t('stats.panel.forecast.ai_sub')
+  if (forecastData.value) return t('stats.panel.forecast.fallback_sub')
+  return t('stats.panel.forecast.sub')
+})
 const revLabels = Array.from({ length: 14 }, (_, i) => `${14 - i}z`).reverse()
 const days = computed(() => [0, 1, 2, 3, 4, 5, 6].map(i => t(`stats.day.${i}`)))
 function countSpacesByType(enabledLots, type) {
@@ -108,12 +136,10 @@ const mixData = computed(() => [
         <div class="panel-head">
           <div>
             <div class="panel-title">{{ t('stats.panel.forecast.title') }}</div>
-            <div class="panel-sub">{{ t('stats.panel.forecast.sub') }}</div>
+            <div class="panel-sub">{{ forecastSubtitle }}</div>
           </div>
-          <div class="chart-legend"><span><i class="blue"></i>{{ t('stats.legend.actual') }}</span><span><i
-                class="red dashed"></i>{{ t('stats.legend.forecast') }}</span></div>
         </div>
-        <ForecastChart :actual="HOURLY" :forecast="forecast" :labels="hours" />
+        <ForecastChart :actual="actualSeries" :forecast="forecastSeries" :labels="forecastLabels" />
       </div>
 
       <div class="panel">

@@ -17,6 +17,7 @@ from lots import router as lots_router
 from models import Account, AccountSession, UserRole
 from spaces import router as spaces_router
 from plates import router as plates_router, warm_up_plate_ocr
+from stats import router as stats_router
 
 DEFAULT_ROLES = ["municipal", "private", "guest", "administrator"]
 
@@ -337,6 +338,7 @@ app.include_router(lots_router)
 app.include_router(spaces_router)
 app.include_router(detections_router)
 app.include_router(plates_router)
+app.include_router(stats_router)
 
 @app.get("/api/test")
 def read_root():
