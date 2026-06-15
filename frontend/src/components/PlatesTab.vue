@@ -261,10 +261,6 @@ watch(searchQuery, scheduleHistoryLoad)
       </div>
     </div>
 
-    <div class="poc-banner">
-      {{ t('plates.poc.info') }}
-    </div>
-
     <div class="plates-body">
       <div class="plates-upload-section">
         <div

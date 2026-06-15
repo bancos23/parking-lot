@@ -305,8 +305,6 @@ const en = {
     'plates.history.page': 'Page',
     'plates.history.page_size': 'Rows per page',
     'plates.search': 'Search license plate…',
-    'plates.poc.badge': 'Proof of Concept',
-    'plates.poc.info': 'This is a demonstration. Real detection will use live cameras and a dedicated OCR model.',
 }
 
 export default en

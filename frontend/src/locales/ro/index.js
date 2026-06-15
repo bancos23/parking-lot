@@ -310,9 +310,7 @@ const ro = {
         'plates.history.refresh': 'Reîncarcă',
         'plates.history.page': 'Pagina',
         'plates.history.page_size': 'Rânduri pe pagină',
-        'plates.search': 'Caută numărul de înmatriculare…',
-        'plates.poc.badge': 'Proof of Concept',
-        'plates.poc.info': 'Aceasta este o demonstrație. Detecția reală va folosi camere live și un model OCR dedicat.',
+        'plates.search': 'Caută numărul de înmatriculare…'
 }
 
 export default ro
