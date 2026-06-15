@@ -20,6 +20,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "paddleocr>=3.5.0",
     "paddlepaddle>=3.3.1",
+    "yt-dlp",
 ]
 
 [tool.setuptools]

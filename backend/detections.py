@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,9 @@ MJPEG_URL_EXTENSIONS = (".mjpeg", ".mjpg")
 URL_FRAME_TIMEOUT_SECONDS = 12
 URL_IMAGE_MAX_BYTES = 25 * 1024 * 1024
 URL_STREAM_FRAME_MAX_BYTES = 4 * 1024 * 1024
+YOUTUBE_REFERENCE_FRAME = {"width": 1920, "height": 1080}
+YOUTUBE_STREAM_CACHE_SECONDS = 300
+YOUTUBE_STREAM_CACHE: dict[str, dict[str, Any]] = {}
 
 
 def require_admin(account: Account) -> None:
@@ -183,6 +187,12 @@ def is_http_source(source: str) -> bool:
     return scheme in {"http", "https"}
 
 
+def is_youtube_source(source: str) -> bool:
+    host = urlparse(source).hostname or ""
+    host = host.removeprefix("www.").lower()
+    return host in {"youtube.com", "m.youtube.com", "youtu.be", "youtube-nocookie.com"}
+
+
 def source_path(source: str) -> str:
     return urlparse(source).path.lower()
 
@@ -289,6 +299,43 @@ def is_video_source(source: str) -> bool:
     return "://" in source or source.lower().startswith(("rtsp:", "rtmp:"))
 
 
+def resolve_youtube_stream_url(source: str) -> str:
+    cached = YOUTUBE_STREAM_CACHE.get(source)
+    now = time.monotonic()
+    if cached and cached["expires_at"] > now:
+        return cached["url"]
+
+    try:
+        from yt_dlp import YoutubeDL
+    except ImportError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="YouTube camera detection requires yt-dlp. Install backend dependencies and restart the API.",
+        ) from error
+
+    options = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "format": "best[height<=1080]/best",
+    }
+    try:
+        with YoutubeDL(options) as downloader:
+            info = downloader.extract_info(source, download=False)
+    except Exception as error:
+        raise HTTPException(status_code=422, detail=f"Could not resolve YouTube stream URL: {source}") from error
+
+    stream_url = info.get("url") if isinstance(info, dict) else None
+    if not stream_url:
+        raise HTTPException(status_code=422, detail=f"Could not resolve YouTube stream URL: {source}")
+
+    YOUTUBE_STREAM_CACHE[source] = {
+        "url": stream_url,
+        "expires_at": now + YOUTUBE_STREAM_CACHE_SECONDS,
+    }
+    return stream_url
+
+
 def read_camera_frame(camera_stream_url: str, image_path: str | None):
     require_detector_dependencies()
 
@@ -301,6 +348,9 @@ def read_camera_frame(camera_stream_url: str, image_path: str | None):
         if image is None:
             raise HTTPException(status_code=422, detail=f"Could not read image: {source}")
         return image, source
+
+    if is_youtube_source(source):
+        source = resolve_youtube_stream_url(source)
 
     if is_http_source(source):
         image_frame = read_http_image_frame(source)
@@ -516,13 +566,17 @@ def scale_points_to_image(points, image_shape, frame_width=None, frame_height=No
     return scaled
 
 
-def scale_regions_to_image(regions: list[dict[str, Any]], image_shape) -> list[dict[str, Any]]:
+def scale_regions_to_image(
+    regions: list[dict[str, Any]],
+    image_shape,
+    default_frame: dict[str, int] | None = None,
+) -> list[dict[str, Any]]:
     scaled_regions = []
     image_height, image_width = image_shape[:2]
 
     for region in regions:
-        frame_width = region.get("frame_width")
-        frame_height = region.get("frame_height")
+        frame_width = region.get("frame_width") or (default_frame or {}).get("width")
+        frame_height = region.get("frame_height") or (default_frame or {}).get("height")
         scaled_points = scale_points_to_image(
             region["points"],
             image_shape,
@@ -729,7 +783,8 @@ def run_yolo_camera_detection(
     body: CameraOccupancyDetectionRequest,
 ) -> dict[str, Any]:
     image, image_source = read_camera_frame(camera_stream_url, body.image_path)
-    image_regions = scale_regions_to_image(regions, image.shape)
+    default_frame = YOUTUBE_REFERENCE_FRAME if is_youtube_source(camera_stream_url) else None
+    image_regions = scale_regions_to_image(regions, image.shape, default_frame=default_frame)
     model = get_yolo_model()
 
     if body.save_frame_path:

@@ -44,6 +44,8 @@ let occupancyTimer
 let occupancyAbortController
 let occupancyInFlight = false
 
+const YOUTUBE_REFERENCE_FRAME = { width: 1920, height: 1080 }
+
 const normalizedUrl = computed(() => props.streamUrl.trim())
 const lowerUrl = computed(() => normalizedUrl.value.toLowerCase())
 const isImageFeed = computed(() => /\.(mjpeg|mjpg|jpg|jpeg|png|webp|gif)(\?.*)?(#.*)?$/.test(lowerUrl.value))
@@ -175,6 +177,10 @@ function frameSizeFromSpaces(spaces) {
   return null
 }
 
+function overlaySourceSize(spaces = occupancy.value?.spaces || []) {
+  return frameSizeFromSpaces(spaces) || (isYouTubeFeed.value ? YOUTUBE_REFERENCE_FRAME : mediaIntrinsicSize())
+}
+
 function mediaIntrinsicSize() {
   const media = mediaRef.value
   const width = Number(media?.videoWidth || media?.naturalWidth || 0)
@@ -226,7 +232,7 @@ function overlayTransform(spaces) {
     }
   }
 
-  const sourceSize = frameSizeFromSpaces(spaces) || mediaIntrinsicSize()
+  const sourceSize = overlaySourceSize(spaces)
   if (sourceSize) {
     return {
       x: value => Number(value || 0) * (canvas.width / sourceSize.width),
@@ -315,7 +321,7 @@ function syncOverlaySize() {
 
   const rect = stage.getBoundingClientRect()
   const pixelRatio = window.devicePixelRatio || 1
-  const mediaRect = containedMediaRect(rect.width, rect.height, mediaIntrinsicSize())
+  const mediaRect = containedMediaRect(rect.width, rect.height, overlaySourceSize())
   const width = Math.max(1, Math.round(mediaRect.width * pixelRatio))
   const height = Math.max(1, Math.round(mediaRect.height * pixelRatio))
 
