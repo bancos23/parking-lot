@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi import Depends
@@ -294,9 +295,13 @@ async def ensure_schema_upgrades(conn) -> None:
         await conn.execute(text(statement))
 
 
-async def clear_startup_sessions() -> None:
+async def clear_expired_sessions() -> None:
     async with async_session() as db:
-        await db.execute(delete(AccountSession))
+        await db.execute(
+            delete(AccountSession).where(
+                AccountSession.expires_at <= datetime.now(timezone.utc)
+            )
+        )
         await db.commit()
 
 
@@ -305,7 +310,7 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await ensure_schema_upgrades(conn)
-    await clear_startup_sessions()
+    await clear_expired_sessions()
     warm_up_plate_ocr()
     async with async_session() as db:
         for role_name in DEFAULT_ROLES:
