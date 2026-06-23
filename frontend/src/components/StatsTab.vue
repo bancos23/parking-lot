@@ -5,14 +5,13 @@ import { useParkingLots } from '@frontend/composables/parkingLots'
 import { useT } from '@frontend/composables/i18n'
 import Sparkline from '@frontend/components/charts/Sparkline.vue'
 import ForecastChart from '@frontend/components/charts/ForecastChart.vue'
-import BarChart from '@frontend/components/charts/BarChart.vue'
 import DonutChart from '@frontend/components/charts/DonutChart.vue'
 
 const { t } = useT()
 const range = ref('7d')
 const forecastData = ref(null)
 const { lots, loadLots } = useParkingLots()
-const { HOURLY, WEEK, REVENUE, ANOMALIES } = PARKING_DATA
+const { HOURLY, WEEK } = PARKING_DATA
 
 onMounted(() => {
   loadLots().catch(() => {})
@@ -42,7 +41,6 @@ const stats = computed(() => {
     totalSpots,
     totalOccupied,
     occupancyPct: totalSpots ? Math.round((totalOccupied / totalSpots) * 100) : 0,
-    revenueToday: enabled.reduce((sum, l) => sum + l.revenue, 0),
     avgDuration: 47,
     lots: enabled.length,
   }
@@ -69,7 +67,6 @@ const forecastSubtitle = computed(() => {
   if (forecastData.value) return t('stats.panel.forecast.fallback_sub')
   return t('stats.panel.forecast.sub')
 })
-const revLabels = Array.from({ length: 14 }, (_, i) => `${14 - i}z`).reverse()
 const days = computed(() => [0, 1, 2, 3, 4, 5, 6].map(i => t(`stats.day.${i}`)))
 function countSpacesByType(enabledLots, type) {
   return enabledLots.reduce((sum, lot) => sum + Number(lot.spaceTypeCounts?.[type] || 0), 0)
@@ -118,15 +115,6 @@ const mixData = computed(() => [
         <div class="kpi-delta down">{{ t('stats.kpi.duration.delta') }}</div>
         <div class="kpi-spark">
           <Sparkline :data="[52, 49, 51, 48, 50, 47, 47]" color="var(--bm-blue)" />
-        </div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">{{ t('stats.kpi.revenue') }}</div>
-        <div class="kpi-value">{{ (stats.revenueToday / 1000).toFixed(1) }}<span class="unit">{{ t('stats.kpi.k_lei')
-            }}</span></div>
-        <div class="kpi-delta up">{{ t('stats.kpi.revenue.delta') }}</div>
-        <div class="kpi-spark">
-          <Sparkline :data="REVENUE.slice(-7).map(v => v / 1000)" color="var(--good)" />
         </div>
       </div>
     </div>
@@ -190,40 +178,6 @@ const mixData = computed(() => [
               <div class="f" :style="{ width: `${(lot.occupied / maxLb) * 100}%` }"></div>
             </div>
             <div class="lval">{{ lot.occupied }}/{{ lot.total }}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="heatmap-grid">
-      <div class="panel">
-        <div class="panel-head">
-          <div>
-            <div class="panel-title">{{ t('stats.panel.revenue.title') }}</div>
-            <div class="panel-sub">{{ t('stats.panel.revenue.total') }} {{(REVENUE.reduce((s, v) => s + v, 0) /
-              1000).toFixed(1) }}k lei</div>
-          </div>
-        </div>
-        <BarChart :data="REVENUE" :labels="revLabels" color="var(--bm-red)" />
-      </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <div>
-            <div class="panel-title">{{ t('stats.panel.anomalies.title') }}</div>
-            <div class="panel-sub">{{ ANOMALIES.length }} {{ t('stats.panel.anomalies.active') }}</div>
-          </div><button class="btn-ghost">{{ t('stats.panel.anomalies.viewall') }}</button>
-        </div>
-        <div class="anomalies-list">
-          <div v-for="item in ANOMALIES" :key="item.id" class="anomaly">
-            <div class="sev-dot"
-              :style="{ background: { high: 'var(--bad)', medium: 'var(--warn)', low: 'var(--text-faint)' }[item.severity] }">
-            </div>
-            <div>
-              <div class="a-title">{{ item.message }}</div>
-              <div class="a-sub">{{ t('stats.anomaly.lot') }} {{ item.lot }}</div>
-            </div>
-            <div class="a-time">{{ item.time }}</div>
           </div>
         </div>
       </div>

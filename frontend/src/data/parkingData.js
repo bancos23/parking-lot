@@ -151,31 +151,6 @@ export const PARKING_DATA = {
         [18, 15, 12, 10, 13, 20, 32, 45, 57, 65, 71, 74, 78, 80, 82, 79, 74, 68, 60, 52, 44, 35, 27, 20],
     ],
 
-    REVENUE: [9100, 10400, 9900, 11100, 12500, 11800, 13200, 14100, 13700, 15100, 15800, 14900, 16200, 17600],
-
-    ANOMALIES: [
-        {
-            id: 'A1',
-            severity: 'high',
-            lot: 'P008',
-            message: 'Ocupare peste 90% timp de 2 ore',
-            time: 'acum 9m',
-        },
-        {
-            id: 'A2',
-            severity: 'medium',
-            lot: 'P005',
-            message: 'Flux mare lângă spital',
-            time: 'acum 21m',
-        },
-        {
-            id: 'A3',
-            severity: 'low',
-            lot: 'P003',
-            message: 'Senzor cu latență ridicată',
-            time: 'acum 38m',
-        },
-    ],
 }
 
 export function colorForOccupancy(occupied, total) {
