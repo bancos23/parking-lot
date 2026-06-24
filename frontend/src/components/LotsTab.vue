@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { colorForOccupancy } from '@frontend/data/parkingData'
+import { colorForOccupancy } from '@frontend/utils/parking'
 import { hasSpaceType, useParkingLots } from '@frontend/composables/parkingLots'
 import { useT } from '@frontend/composables/i18n'
 import LotForm from '@frontend/components/LotForm.vue'

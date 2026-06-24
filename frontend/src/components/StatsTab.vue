@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { PARKING_DATA } from '@frontend/data/parkingData'
 import { useParkingLots } from '@frontend/composables/parkingLots'
 import { useT } from '@frontend/composables/i18n'
 import Sparkline from '@frontend/components/charts/Sparkline.vue'
@@ -10,12 +9,15 @@ import DonutChart from '@frontend/components/charts/DonutChart.vue'
 const { t } = useT()
 const range = ref('7d')
 const forecastData = ref(null)
+const heatmapData = ref(null)
 const { lots, loadLots } = useParkingLots()
-const { HOURLY, WEEK } = PARKING_DATA
+const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+const emptyHeatmap = Array.from({ length: 7 }, () => Array(24).fill(null))
 
 onMounted(() => {
   loadLots().catch(() => {})
   loadOccupancyForecast().catch(() => {})
+  loadOccupancyHeatmap().catch(() => {})
 })
 
 async function loadOccupancyForecast() {
@@ -25,6 +27,15 @@ async function loadOccupancyForecast() {
 
   if (!response.ok) return
   forecastData.value = await response.json()
+}
+
+async function loadOccupancyHeatmap() {
+  const response = await fetch('/api/stats/occupancy-heatmap?lookback_days=30', {
+    credentials: 'include',
+  })
+
+  if (!response.ok) return
+  heatmapData.value = await response.json()
 }
 
 function heatColor(v) {
@@ -48,26 +59,32 @@ const stats = computed(() => {
 
 const leaderboard = computed(() => [...lots.value].filter(l => l.state === 'enabled').sort((a, b) => b.occupied - a.occupied).slice(0, 6))
 const maxLb = computed(() => Math.max(1, ...leaderboard.value.map(l => l.occupied)))
-const fallbackForecast = computed(() => HOURLY.map((v, i) => Math.min(100, Math.max(5, v + Math.sin(i * 0.6) * 4 + 2))))
-const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
 const actualSeries = computed(() => {
   const values = forecastData.value?.actual?.map(item => Number(item.occupancy))
-  return values?.length === HOURLY.length ? values : HOURLY
+  return values?.length === hours.length ? values : []
 })
 const forecastSeries = computed(() => {
   const values = forecastData.value?.forecast?.map(item => Number(item.occupancy))
-  return values?.length === HOURLY.length ? values : fallbackForecast.value
+  return values?.length === hours.length ? values : []
 })
 const forecastLabels = computed(() => {
   const labels = forecastData.value?.forecast?.map(item => item.label)
-  return labels?.length === HOURLY.length ? labels : hours
+  return labels?.length === hours.length ? labels : []
 })
+const occupancySparkline = computed(() => actualSeries.value.slice(-12))
 const forecastSubtitle = computed(() => {
   if (forecastData.value?.trained) return t('stats.panel.forecast.ai_sub')
   if (forecastData.value) return t('stats.panel.forecast.fallback_sub')
   return t('stats.panel.forecast.sub')
 })
 const days = computed(() => [0, 1, 2, 3, 4, 5, 6].map(i => t(`stats.day.${i}`)))
+const heatmapRows = computed(() => {
+  const values = heatmapData.value?.values
+  if (!Array.isArray(values) || values.length !== 7) return emptyHeatmap
+
+  return values.map(row => Array.isArray(row) && row.length === 24 ? row : Array(24).fill(null))
+})
+
 function countSpacesByType(enabledLots, type) {
   return enabledLots.reduce((sum, lot) => sum + Number(lot.spaceTypeCounts?.[type] || 0), 0)
 }
@@ -106,7 +123,7 @@ const mixData = computed(() => [
         <div class="kpi-value">{{ stats.occupancyPct }}<span class="unit">%</span></div>
         <div class="kpi-delta up">{{ t('stats.kpi.occupancy.delta') }}</div>
         <div class="kpi-spark">
-          <Sparkline :data="HOURLY.slice(-12)" color="var(--bm-red)" />
+          <Sparkline :data="occupancySparkline" color="var(--bm-red)" />
         </div>
       </div>
       <div class="kpi">
@@ -152,10 +169,13 @@ const mixData = computed(() => [
         <div class="heatmap">
           <div></div>
           <div v-for="(h, i) in hours" :key="h" class="hlabel">{{ i % 2 === 0 ? h : '' }}</div>
-          <template v-for="(row, di) in WEEK" :key="di">
+          <template v-for="(row, di) in heatmapRows" :key="di">
             <div class="hlabel">{{ days[di] }}</div>
-            <div v-for="(v, hi) in row" :key="`${di}-${hi}`" class="hcell" :style="{ background: heatColor(v) }"
-              :data-tip="`${days[di]} ${hours[hi]}:00 · ${v}%`"></div>
+            <div v-for="(v, hi) in row" :key="`${di}-${hi}`" class="hcell" :class="{ missing: v == null }"
+              :style="{ background: v == null ? undefined : heatColor(v) }"
+              :data-tip="v == null
+                ? `${days[di]} ${hours[hi]}:00 · ${t('stats.panel.heatmap.no_data')}`
+                : `${days[di]} ${hours[hi]}:00 · ${v}%`"></div>
           </template>
         </div>
       </div>

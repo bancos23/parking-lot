@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
@@ -16,6 +17,7 @@ from models import Account, ParkingSpace, ParkingSpaceDetection
 router = APIRouter(prefix="/api", tags=["statistics"])
 
 DEMO_HOURLY = [18, 14, 12, 11, 16, 28, 45, 63, 72, 76, 71, 68, 74, 81, 86, 83, 77, 70, 64, 58, 51, 45, 36, 26]
+HEATMAP_TIMEZONE = ZoneInfo("Europe/Bucharest")
 MIN_TRAINING_POINTS = 8
 
 
@@ -84,6 +86,22 @@ def actual_points(series: list[dict], hours: int) -> list[dict]:
             "occupancy": clamp_percent(point["occupancy"]),
         }
         for point in points
+    ]
+
+
+def heatmap_values(series: list[dict]) -> list[list[int | None]]:
+    grouped: dict[tuple[int, int], list[float]] = defaultdict(list)
+
+    for point in series:
+        local_bucket = normalize_datetime(point["bucket"]).astimezone(HEATMAP_TIMEZONE)
+        grouped[(local_bucket.weekday(), local_bucket.hour)].append(float(point["occupancy"]))
+
+    return [
+        [
+            clamp_percent(sum(values) / len(values)) if (values := grouped.get((weekday, hour))) else None
+            for hour in range(24)
+        ]
+        for weekday in range(7)
     ]
 
 
@@ -257,4 +275,24 @@ async def occupancy_forecast(
         "account_id": account.id if account else None,
         "actual": actual,
         "forecast": forecast,
+    }
+
+
+@router.get("/stats/occupancy-heatmap")
+async def occupancy_heatmap(
+    lookback_days: int = Query(default=30, ge=1, le=365),
+    lot_id: int | None = Query(default=None, ge=1),
+    account: Account | None = Depends(get_optional_account),
+    db: AsyncSession = Depends(get_db),
+):
+    series = await occupancy_series(db, lot_id=lot_id, lookback_days=lookback_days)
+
+    return {
+        "generated_at": datetime.now(timezone.utc),
+        "lookback_days": lookback_days,
+        "lot_id": lot_id,
+        "timezone": str(HEATMAP_TIMEZONE),
+        "samples": len(series),
+        "account_id": account.id if account else None,
+        "values": heatmap_values(series),
     }

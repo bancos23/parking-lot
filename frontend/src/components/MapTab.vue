@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { colorForOccupancy, spaceTypeGlyph } from '@frontend/data/parkingData'
+import { colorForOccupancy, spaceTypeGlyph } from '@frontend/utils/parking'
 import { useT } from '@frontend/composables/i18n'
 import { MAP_CENTER, hasSpaceType, primarySpaceType, useParkingLots } from '@frontend/composables/parkingLots'
 import { openDirections } from '@frontend/utils/maps'

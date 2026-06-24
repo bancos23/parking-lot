@@ -665,6 +665,10 @@ input, select, textarea { font: inherit; color: inherit; }
   font-size: 0;
   position: relative;
 }
+.heatmap .hcell.missing {
+  background: var(--surface-2);
+  border: 1px dashed var(--border-strong);
+}
 .heatmap .hcell:hover::after {
   content: attr(data-tip);
   position: absolute;
