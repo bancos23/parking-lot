@@ -5,10 +5,10 @@
     "setup": "npm install && npm run install:all && npm run configure",
     "configure": "node scripts/configure.mjs",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "cd backend && py -m uvicorn main:app --reload --reload-exclude output --reload-exclude debug_outputs --reload-exclude .paddlex --reload-exclude __pycache__ --host 0.0.0.0 --port 8000",
+    "dev:backend": "node scripts/backend-venv.mjs dev",
     "dev:frontend": "cd frontend && npm run dev",
     "install:frontend": "cd frontend && npm install",
-    "install:backend": "cd backend && pip install -e .",
+    "install:backend": "node scripts/backend-venv.mjs install",
     "install:all": "npm run install:frontend && npm run install:backend"
   },
   "devDependencies": {
