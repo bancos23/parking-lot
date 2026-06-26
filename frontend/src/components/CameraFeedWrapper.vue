@@ -24,6 +24,10 @@ const props = defineProps({
     type: Number,
     default: 60000,
   },
+  forceRefreshOnMount: {
+    type: Boolean,
+    default: false,
+  },
 })
 const emit = defineEmits(['occupancy'])
 const { t } = useT()
@@ -41,8 +45,11 @@ const occupancyError = ref('')
 
 let resizeObserver
 let occupancyTimer
-let occupancyAbortController
-let occupancyInFlight = false
+let snapshotAbortController
+let forceRefreshAbortController
+let snapshotInFlight = false
+let forceRefreshInFlight = false
+let occupancyRunId = 0
 
 const YOUTUBE_REFERENCE_FRAME = { width: 1920, height: 1080 }
 
@@ -365,14 +372,69 @@ function resetFeedState() {
   nextTick(handleVideoReady)
 }
 
+function spaceIsOccupied(space) {
+  return space?.occupied === true || space?.status === 'occupied'
+}
+
+function spaceTypeCounts(spaces) {
+  return spaces.reduce((counts, space) => {
+    const type = space.space_type || 'normal'
+    counts[type] = (counts[type] || 0) + 1
+    return counts
+  }, {})
+}
+
+function normalizeDetectionSnapshot(data) {
+  const spaces = Array.isArray(data?.spaces) ? data.spaces : []
+  const total = spaces.length
+  const occupied = spaces.filter(spaceIsOccupied).length
+  const available = Math.max(0, total - occupied)
+  const previousSpaces = Array.isArray(occupancy.value?.spaces) ? occupancy.value.spaces : []
+  const previousCameraOccupied = previousSpaces.filter(spaceIsOccupied).length
+  const previousLotTotal = Number(occupancy.value?.lot_total_spots ?? total)
+  const previousLotOccupied = Number(occupancy.value?.lot_occupied_spots ?? previousCameraOccupied)
+  const lotOccupied = Math.max(0, Math.min(previousLotTotal, previousLotOccupied - previousCameraOccupied + occupied))
+
+  return {
+    event: 'camera_occupancy_snapshot',
+    generated_at: data?.generated_at || new Date().toISOString(),
+    parking_lot_id: data?.parking_lot_id,
+    parking_lot_name: data?.parking_lot_name || '',
+    camera_id: data?.camera_id ?? props.cameraId,
+    camera_name: props.cameraName,
+    camera_type: props.cameraType,
+    lot_total_spots: previousLotTotal,
+    lot_occupied_spots: lotOccupied,
+    lot_available_spots: Math.max(0, previousLotTotal - lotOccupied),
+    lot_space_type_counts: occupancy.value?.lot_space_type_counts || spaceTypeCounts(spaces),
+    camera_total_spots: total,
+    camera_occupied_spots: occupied,
+    camera_available_spots: available,
+    spaces,
+  }
+}
+
+function isCurrentOccupancyRun(runId) {
+  return runId === occupancyRunId
+}
+
+function updateOccupancyLoading() {
+  occupancyLoading.value = forceRefreshInFlight || (!occupancy.value && snapshotInFlight)
+}
+
 function stopOccupancyPolling() {
   if (occupancyTimer) {
     clearInterval(occupancyTimer)
     occupancyTimer = null
   }
-  occupancyAbortController?.abort()
-  occupancyAbortController = null
-  occupancyInFlight = false
+  occupancyRunId += 1
+  snapshotAbortController?.abort()
+  forceRefreshAbortController?.abort()
+  snapshotAbortController = null
+  forceRefreshAbortController = null
+  snapshotInFlight = false
+  forceRefreshInFlight = false
+  updateOccupancyLoading()
 }
 
 async function fetchCameraJson(url, options = {}) {
@@ -397,41 +459,82 @@ async function fetchCameraJson(url, options = {}) {
   return data
 }
 
-async function refreshOccupancy() {
-  if (!props.cameraId || occupancyInFlight) return
+async function applyOccupancyData(data, runId) {
+  if (!isCurrentOccupancyRun(runId)) return
+
+  occupancyError.value = ''
+  occupancy.value = data
+  emit('occupancy', data)
+  await nextTick()
+  drawOccupancyOverlay()
+}
+
+async function refreshOccupancy(runId = occupancyRunId) {
+  if (!props.cameraId || snapshotInFlight) return
 
   const controller = new AbortController()
-  occupancyAbortController = controller
-  occupancyInFlight = true
-  occupancyLoading.value = !occupancy.value
+  snapshotAbortController = controller
+  snapshotInFlight = true
   occupancyError.value = ''
+  updateOccupancyLoading()
 
   try {
     const data = await fetchCameraJson(`/api/cameras/${props.cameraId}/occupancy`, {
       signal: controller.signal,
     })
 
-    occupancy.value = data
-    emit('occupancy', data)
-    await nextTick()
-    drawOccupancyOverlay()
+    await applyOccupancyData(data, runId)
   } catch (error) {
-    if (error?.name !== 'AbortError') {
+    if (error?.name !== 'AbortError' && isCurrentOccupancyRun(runId)) {
       occupancyError.value = error.message || 'Could not load camera occupancy.'
     }
   } finally {
-    if (occupancyAbortController === controller) {
-      occupancyAbortController = null
-      occupancyInFlight = false
-      occupancyLoading.value = false
+    if (snapshotAbortController === controller) {
+      snapshotAbortController = null
+      snapshotInFlight = false
+      updateOccupancyLoading()
+    }
+  }
+}
+
+async function forceRefreshOccupancy(runId = occupancyRunId) {
+  if (!props.cameraId || forceRefreshInFlight) return
+
+  const controller = new AbortController()
+  forceRefreshAbortController = controller
+  forceRefreshInFlight = true
+  occupancyError.value = ''
+  updateOccupancyLoading()
+
+  try {
+    const data = await fetchCameraJson(`/api/cameras/${props.cameraId}/detect-occupancy`, {
+      method: 'POST',
+      body: JSON.stringify({ source: 'live-camera-open' }),
+      signal: controller.signal,
+    })
+
+    await applyOccupancyData(normalizeDetectionSnapshot(data), runId)
+  } catch (error) {
+    if (error?.name !== 'AbortError' && isCurrentOccupancyRun(runId)) {
+      occupancyError.value = error.message || 'Could not load camera occupancy.'
+    }
+  } finally {
+    if (forceRefreshAbortController === controller) {
+      forceRefreshAbortController = null
+      forceRefreshInFlight = false
+      updateOccupancyLoading()
     }
   }
 }
 
 function startOccupancyPolling() {
   stopOccupancyPolling()
-  refreshOccupancy()
-  occupancyTimer = setInterval(refreshOccupancy, props.pollIntervalMs)
+  const runId = occupancyRunId
+  refreshOccupancy(runId)
+  if (props.forceRefreshOnMount) {
+    forceRefreshOccupancy(runId)
+  }
+  occupancyTimer = setInterval(() => refreshOccupancy(runId), props.pollIntervalMs)
 }
 
 onMounted(() => {

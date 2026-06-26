@@ -346,6 +346,7 @@ watch(selectedId, () => {
             :camera-name="selectedCamera.name"
             :camera-type="selectedCamera.camera_type"
             :stream-url="selectedCamera.stream_url"
+            force-refresh-on-mount
             @occupancy="applyOccupancySnapshot"
           />
         </div>
