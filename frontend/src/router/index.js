@@ -7,7 +7,7 @@ import Terms from '@frontend/pages/Terms.vue'
 import { useAuth } from '@frontend/stores/auth'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', name: 'home', component: Home, meta: { requiresAuth: true } },
     { path: '/login', name: 'login', component: Login },
