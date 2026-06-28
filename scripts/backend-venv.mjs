@@ -17,7 +17,7 @@ const venvPython =
     : path.join(venvDirectory, "bin", "python");
 
 const action = process.argv[2];
-const supportedActions = new Set(["install", "dev"]);
+const supportedActions = new Set(["install", "dev", "start"]);
 const pythonVersionCheck = [
   "-c",
   "import sys; raise SystemExit(0 if (3, 13) <= sys.version_info[:2] < (3, 14) else 1)",
@@ -58,6 +58,32 @@ function run(command, args, options = {}) {
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
+}
+
+function backendHost(defaultHost) {
+  return process.env.BACKEND_HOST?.trim() || defaultHost;
+}
+
+function backendPort() {
+  return process.env.BACKEND_PORT?.trim() || "8000";
+}
+
+function uvicornArgs({ reload, host }) {
+  const args = ["-m", "uvicorn", "main:app"];
+
+  if (reload) {
+    args.push(
+      "--reload",
+      "--reload-exclude", "output",
+      "--reload-exclude", "debug_outputs",
+      "--reload-exclude", ".paddlex",
+      "--reload-exclude", ".paddlex_local",
+      "--reload-exclude", "__pycache__",
+    );
+  }
+
+  args.push("--host", host, "--port", backendPort());
+  return args;
 }
 
 function pythonCandidates() {
@@ -119,7 +145,7 @@ async function ensureVenv() {
 
 async function main() {
   if (!supportedActions.has(action)) {
-    throw new Error("Usage: node scripts/backend-venv.mjs <install|dev>");
+    throw new Error("Usage: node scripts/backend-venv.mjs <install|dev|start>");
   }
 
   await ensureVenv();
@@ -129,19 +155,18 @@ async function main() {
     return;
   }
 
+  if (action === "dev") {
+    run(
+      venvPython,
+      uvicornArgs({ reload: true, host: backendHost("0.0.0.0") }),
+      { cwd: backendDirectory },
+    );
+    return;
+  }
+
   run(
     venvPython,
-    [
-      "-m", "uvicorn", "main:app",
-      "--reload",
-      "--reload-exclude", "output",
-      "--reload-exclude", "debug_outputs",
-      "--reload-exclude", ".paddlex",
-      "--reload-exclude", ".paddlex_local",
-      "--reload-exclude", "__pycache__",
-      "--host", "0.0.0.0",
-      "--port", "8000",
-    ],
+    uvicornArgs({ reload: false, host: backendHost("127.0.0.1") }),
     { cwd: backendDirectory },
   );
 }

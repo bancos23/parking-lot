@@ -6,7 +6,10 @@
     "configure": "node scripts/configure.mjs",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "node scripts/backend-venv.mjs dev",
+    "start:backend": "node scripts/backend-venv.mjs start",
     "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "build:frontend:subdir": "cd frontend && npm run build:subdir",
     "install:frontend": "cd frontend && npm install",
     "install:backend": "node scripts/backend-venv.mjs install",
     "install:all": "npm run install:frontend && npm run install:backend"
