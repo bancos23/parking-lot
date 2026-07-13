@@ -15,8 +15,9 @@ from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
 
 from auth import get_current_account
-from database import get_db
+from database import async_session, get_db
 from models import Account, ParkingLot, ParkingLotCamera, ParkingSpace, ParkingSpaceDetection
+from stats import invalidate_stats_cache, warm_default_stats
 from schemas import (
     BoundingBox,
     CameraDetectionBatch,
@@ -1120,6 +1121,8 @@ async def run_camera_occupancy_detection(
         }
 
     await db.commit()
+    invalidate_stats_cache()
+    asyncio.create_task(warm_default_stats(async_session))
 
     return DetectionUpdateResponse(
         parking_lot_id=camera.parking_lot_id,
@@ -1506,6 +1509,8 @@ async def receive_camera_detections(
         }
 
     await db.commit()
+    invalidate_stats_cache()
+    asyncio.create_task(warm_default_stats(async_session))
 
     return DetectionUpdateResponse(
         parking_lot_id=camera.parking_lot_id,

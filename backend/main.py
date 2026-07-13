@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -18,7 +19,7 @@ from lots import router as lots_router
 from models import Account, AccountSession, UserRole
 from spaces import router as spaces_router
 from plates import router as plates_router, warm_up_plate_ocr
-from stats import router as stats_router
+from stats import router as stats_router, warm_default_stats
 
 DEFAULT_ROLES = ["municipal", "private", "guest", "administrator"]
 
@@ -320,9 +321,11 @@ async def lifespan(app: FastAPI):
         await db.commit()
 
     occupancy_detection_task = start_occupancy_detection_scheduler(async_session)
+    stats_warm_task = asyncio.create_task(warm_default_stats(async_session))
     try:
         yield
     finally:
+        stats_warm_task.cancel()
         await stop_occupancy_detection_scheduler(occupancy_detection_task)
         await engine.dispose()
 

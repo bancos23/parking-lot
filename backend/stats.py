@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import math
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,8 @@ router = APIRouter(prefix="/api", tags=["statistics"])
 DEMO_HOURLY = [18, 14, 12, 11, 16, 28, 45, 63, 72, 76, 71, 68, 74, 81, 86, 83, 77, 70, 64, 58, 51, 45, 36, 26]
 HEATMAP_TIMEZONE = ZoneInfo("Europe/Bucharest")
 MIN_TRAINING_POINTS = 8
+STATS_CACHE: dict[tuple[str, int | None, int, int], dict] = {}
+STATS_WARM_LOCK = asyncio.Lock()
 
 
 def clamp_percent(value: float) -> int:
@@ -215,35 +218,87 @@ async def occupancy_series(
 
         states_by_bucket[(hour_bucket(row.detected_at), detected_lot_id)][str(space_key)] = bool(row.occupied)
 
-    buckets = sorted({bucket for bucket, _ in states_by_bucket})
-    series: list[dict] = []
+    bucket_totals: dict[datetime, list[int]] = defaultdict(lambda: [0, 0])
+    for (bucket, detected_lot_id), states in states_by_bucket.items():
+        lot_total = totals.get(detected_lot_id) or len(states)
+        if lot_total > 0:
+            bucket_totals[bucket][0] += lot_total
+            bucket_totals[bucket][1] += sum(states.values())
 
-    for bucket in buckets:
-        total_spaces = 0
-        occupied_spaces = 0
-
-        for (state_bucket, state_lot_id), states in states_by_bucket.items():
-            if state_bucket != bucket:
-                continue
-            lot_total = totals.get(state_lot_id) or len(states)
-            if lot_total <= 0:
-                continue
-            total_spaces += lot_total
-            occupied_spaces += sum(1 for occupied in states.values() if occupied)
-
-        if total_spaces <= 0:
-            continue
-
-        series.append(
-            {
-                "bucket": bucket,
-                "occupancy": (occupied_spaces / total_spaces) * 100,
-                "occupied_spaces": occupied_spaces,
-                "total_spaces": total_spaces,
-            }
-        )
+    series = [
+        {
+            "bucket": bucket,
+            "occupancy": (occupied_spaces / total_spaces) * 100,
+            "occupied_spaces": occupied_spaces,
+            "total_spaces": total_spaces,
+        }
+        for bucket, (total_spaces, occupied_spaces) in sorted(bucket_totals.items())
+        if total_spaces > 0
+    ]
 
     return series
+
+
+def invalidate_stats_cache() -> None:
+    STATS_CACHE.clear()
+
+
+async def forecast_payload(db: AsyncSession, hours: int, lot_id: int | None, lookback_days: int) -> dict:
+    key = ("forecast", lot_id, hours, lookback_days)
+    if payload := STATS_CACHE.get(key):
+        return payload
+
+    series = await occupancy_series(db, lot_id=lot_id, lookback_days=lookback_days)
+    trained, model_reason, forecast = await asyncio.to_thread(random_forest_forecast, series, hours)
+    actual = actual_points(series, hours)
+
+    if not trained or len(actual) != hours or len(forecast) != hours:
+        fallback_actual, fallback_forecast = fallback_points(hours)
+        actual = actual if len(actual) == hours else fallback_actual
+        forecast = fallback_forecast
+
+    payload = {
+        "generated_at": datetime.now(timezone.utc),
+        "model": "RandomForestRegressor" if trained else "fallback",
+        "model_reason": model_reason,
+        "trained": trained,
+        "hours": hours,
+        "lookback_days": lookback_days,
+        "lot_id": lot_id,
+        "samples": len(series),
+        "actual": actual,
+        "forecast": forecast,
+    }
+    STATS_CACHE[key] = payload
+    return payload
+
+
+async def heatmap_payload(db: AsyncSession, lot_id: int | None, lookback_days: int) -> dict:
+    key = ("heatmap", lot_id, 0, lookback_days)
+    if payload := STATS_CACHE.get(key):
+        return payload
+
+    series = await occupancy_series(db, lot_id=lot_id, lookback_days=lookback_days)
+    payload = {
+        "generated_at": datetime.now(timezone.utc),
+        "lookback_days": lookback_days,
+        "lot_id": lot_id,
+        "timezone": str(HEATMAP_TIMEZONE),
+        "samples": len(series),
+        "values": heatmap_values(series),
+    }
+    STATS_CACHE[key] = payload
+    return payload
+
+
+async def warm_default_stats(session_factory) -> None:
+    try:
+        async with STATS_WARM_LOCK:
+            async with session_factory() as db:
+                await forecast_payload(db, hours=24, lot_id=None, lookback_days=90)
+                await heatmap_payload(db, lot_id=None, lookback_days=30)
+    except Exception:
+        pass
 
 
 @router.get("/stats/occupancy-forecast")
@@ -254,28 +309,7 @@ async def occupancy_forecast(
     account: Account | None = Depends(get_optional_account),
     db: AsyncSession = Depends(get_db),
 ):
-    series = await occupancy_series(db, lot_id=lot_id, lookback_days=lookback_days)
-    trained, model_reason, forecast = random_forest_forecast(series, hours)
-    actual = actual_points(series, hours)
-
-    if not trained or len(actual) != hours or len(forecast) != hours:
-        fallback_actual, fallback_forecast = fallback_points(hours)
-        actual = actual if len(actual) == hours else fallback_actual
-        forecast = fallback_forecast
-
-    return {
-        "generated_at": datetime.now(timezone.utc),
-        "model": "RandomForestRegressor" if trained else "fallback",
-        "model_reason": model_reason,
-        "trained": trained,
-        "hours": hours,
-        "lookback_days": lookback_days,
-        "lot_id": lot_id,
-        "samples": len(series),
-        "account_id": account.id if account else None,
-        "actual": actual,
-        "forecast": forecast,
-    }
+    return {**await forecast_payload(db, hours, lot_id, lookback_days), "account_id": account.id if account else None}
 
 
 @router.get("/stats/occupancy-heatmap")
@@ -285,14 +319,4 @@ async def occupancy_heatmap(
     account: Account | None = Depends(get_optional_account),
     db: AsyncSession = Depends(get_db),
 ):
-    series = await occupancy_series(db, lot_id=lot_id, lookback_days=lookback_days)
-
-    return {
-        "generated_at": datetime.now(timezone.utc),
-        "lookback_days": lookback_days,
-        "lot_id": lot_id,
-        "timezone": str(HEATMAP_TIMEZONE),
-        "samples": len(series),
-        "account_id": account.id if account else None,
-        "values": heatmap_values(series),
-    }
+    return {**await heatmap_payload(db, lot_id, lookback_days), "account_id": account.id if account else None}
