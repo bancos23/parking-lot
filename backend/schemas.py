@@ -274,7 +274,7 @@ class CameraOccupancyDetectionRequest(BaseModel):
     confidence: float = Field(default=0.15, ge=0, le=1)
     image_size: int = Field(default=1280, ge=320, le=4096)
     occupied_threshold: float = Field(default=0.1, ge=0, le=1)
-    vehicle_classes: list[int] | None = Field(default_factory=lambda: [2, 3])
+    vehicle_classes: list[int] | None = Field(default_factory=lambda: [2, 3, 7])
     debug: bool = False
     save_frame_path: str | None = None
     save_output_path: str | None = None
