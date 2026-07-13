@@ -956,12 +956,9 @@ def _color_variants(crop):
 def _collect_ocr_candidates(variants):
     candidates = []
     for name, img in variants:
-        print(f"           OCR pass: {name}...", end="", flush=True)
         tokens = _ocr_read(img)
         if not tokens:
-            print(" no text")
             continue
-        print(f" {len(tokens)} token(s)")
 
         merged = "".join(t for t, _ in tokens)
         avg_c = sum(c for _, c in tokens) / len(tokens)
@@ -989,8 +986,6 @@ def read_plate(crop, debug_dir=None, debug_idx=""):
     country_hint, _has_blue_band = _detect_left_strip(crop)
     _is_electric = _looks_like_green_plate(crop)
 
-    print(f"         [visual] country_hint={country_hint!r}  blue_band={_has_blue_band}  electric={_is_electric}")
-
     line_crop = _line_ocr_crop(crop)
     allow_ro_temporary = _looks_like_red_plate(line_crop)
 
@@ -998,7 +993,6 @@ def read_plate(crop, debug_dir=None, debug_idx=""):
     candidates = _collect_ocr_candidates(variants)
     best_unparsed = ""
     if not candidates:
-        print("         [accurate] no text found")
         return best_unparsed, None
 
     best_text, voted = _choose_best_text(
@@ -1029,16 +1023,7 @@ def read_plate(crop, debug_dir=None, debug_idx=""):
             if candidate_plate:
                 best_text = candidate_text
                 plate = candidate_plate
-                print(f"         [accurate] rescued plate from candidate: {candidate_text} (src={item[2]}, conf={item[1]:.2f})")
                 break
-
-    _print_candidates(
-        candidates,
-        best_text,
-        voted,
-        allow_ro_temporary=allow_ro_temporary,
-        country_hint=country_hint,
-    )
 
     if plate:
         if _is_electric and isinstance(plate, RomanianPlate):
@@ -1135,27 +1120,6 @@ def _choose_best_text(candidates, allow_ro_temporary=False, country_hint=None):
                     best_text = voted
 
     return best_text, voted
-
-
-def _print_candidates(candidates, best_text, voted, allow_ro_temporary=False, country_hint=None):
-    print(f"         OCR candidates (showing top 5):")
-    for item in sorted(
-        candidates,
-        key=lambda item: _score_candidate(
-            item,
-            allow_ro_temporary=allow_ro_temporary,
-            country_hint=country_hint,
-        ),
-        reverse=True,
-    )[:5]:
-        t, c, src = item
-        marker = "*" if t==best_text else " "
-        print(
-            f"         {marker} [{src:<12}] {t!r:<12} "
-            f"conf={c:.2f}  fixed={_vote_text(t, country_hint=country_hint)!r}"
-        )
-    if voted:
-        print(f"         Vote result: {voted}")
 
 
 def _parsed_candidate_scores(candidates):

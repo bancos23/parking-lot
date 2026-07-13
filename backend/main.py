@@ -18,7 +18,7 @@ from detections import (
 from lots import router as lots_router
 from models import Account, AccountSession, UserRole
 from spaces import router as spaces_router
-from plates import router as plates_router, warm_up_plate_ocr
+from plates import router as plates_router, warm_up_plate_model, warm_up_plate_ocr
 from stats import router as stats_router, warm_default_stats
 
 DEFAULT_ROLES = ["municipal", "private", "guest", "administrator"]
@@ -313,6 +313,7 @@ async def lifespan(app: FastAPI):
         await ensure_schema_upgrades(conn)
     await clear_expired_sessions()
     warm_up_plate_ocr()
+    warm_up_plate_model()
     async with async_session() as db:
         for role_name in DEFAULT_ROLES:
             exists = await db.execute(select(UserRole).where(UserRole.name == role_name))

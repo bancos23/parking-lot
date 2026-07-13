@@ -62,6 +62,14 @@ def warm_up_plate_ocr() -> bool:
     return bool(warm_up())
 
 
+def warm_up_plate_model() -> bool:
+    try:
+        _get_plate_model()
+    except HTTPException:
+        return False
+    return True
+
+
 def _get_plate_model():
     if not _PLATE_YOLO_AVAILABLE:
         raise HTTPException(status_code=500, detail="YOLO is not installed")
