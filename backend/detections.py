@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
 
 from auth import get_current_account
+from config import settings
 from database import async_session, get_db
 from models import Account, ParkingLot, ParkingLotCamera, ParkingSpace, ParkingSpaceDetection
 from stats import invalidate_stats_cache, warm_default_stats
@@ -45,7 +46,7 @@ BACKEND_DIR = Path(__file__).resolve().parent
 YOLO26X_MODEL_NAME = "yolo26x.pt"
 YOLO26X_MODEL_PATH = BACKEND_DIR / YOLO26X_MODEL_NAME
 DEBUG_OUTPUT_DIR = BACKEND_DIR / "debug_outputs"
-BACKGROUND_DETECTION_INTERVAL_SECONDS = 60
+BACKGROUND_DETECTION_INTERVAL_SECONDS = settings.background_detection_interval_seconds
 IMAGE_URL_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
 MJPEG_URL_EXTENSIONS = (".mjpeg", ".mjpg")
 URL_FRAME_TIMEOUT_SECONDS = 12

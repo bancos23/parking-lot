@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     db_name: str
     session_idle_timeout_minutes: int = 60
     session_cookie_max_age_days: int = 7
+    background_detection_interval_seconds: int = 30
 
     @property
     def database_url(self) -> str:

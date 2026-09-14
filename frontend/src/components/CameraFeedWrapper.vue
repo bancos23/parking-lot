@@ -22,7 +22,7 @@ const props = defineProps({
   },
   pollIntervalMs: {
     type: Number,
-    default: 60000,
+    default: 30000,
   },
   forceRefreshOnMount: {
     type: Boolean,
