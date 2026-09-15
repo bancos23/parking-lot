@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import math
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import get_optional_account
+from config import settings
 from database import get_db
-from models import Account, ParkingSpace, ParkingSpaceDetection
+from models import Account, ParkingSpace
 
 
 router = APIRouter(prefix="/api", tags=["statistics"])
@@ -22,6 +24,8 @@ HEATMAP_TIMEZONE = ZoneInfo("Europe/Bucharest")
 MIN_TRAINING_POINTS = 8
 STATS_CACHE: dict[tuple[str, int | None, int, int], dict] = {}
 STATS_WARM_LOCK = asyncio.Lock()
+STATS_REFRESH_MIN_INTERVAL_SECONDS = settings.stats_refresh_min_interval_seconds
+_last_stats_refresh = 0.0
 
 
 def clamp_percent(value: float) -> int:
@@ -32,11 +36,6 @@ def normalize_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
-
-
-def hour_bucket(value: datetime) -> datetime:
-    value = normalize_datetime(value)
-    return value.replace(minute=0, second=0, microsecond=0)
 
 
 def hour_label(value: datetime) -> str:
@@ -185,6 +184,37 @@ async def active_space_totals(db: AsyncSession, lot_id: int | None) -> dict[int,
     return {int(row[0]): int(row[1]) for row in result.all() if row[0] is not None}
 
 
+OCCUPANCY_SERIES_SQL = """
+WITH last_states AS (
+    SELECT DISTINCT ON (
+        date_trunc('hour', detected_at AT TIME ZONE 'UTC'),
+        parking_lot_id,
+        COALESCE(parking_space_id::text, space_code)
+    )
+        parking_lot_id,
+        date_trunc('hour', detected_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket,
+        occupied
+    FROM parking_space_detections
+    WHERE detected_at >= :since
+        AND COALESCE(parking_space_id::text, space_code) IS NOT NULL
+{lot_filter}
+    ORDER BY
+        date_trunc('hour', detected_at AT TIME ZONE 'UTC'),
+        parking_lot_id,
+        COALESCE(parking_space_id::text, space_code),
+        detected_at DESC
+)
+SELECT
+    bucket,
+    parking_lot_id,
+    count(*) AS spaces,
+    count(*) FILTER (WHERE occupied) AS occupied
+FROM last_states
+GROUP BY bucket, parking_lot_id
+ORDER BY bucket
+"""
+
+
 async def occupancy_series(
     db: AsyncSession,
     lot_id: int | None,
@@ -193,37 +223,20 @@ async def occupancy_series(
     since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
     totals = await active_space_totals(db, lot_id)
 
-    stmt = (
-        select(
-            ParkingSpaceDetection.parking_lot_id,
-            ParkingSpaceDetection.parking_space_id,
-            ParkingSpaceDetection.space_code,
-            ParkingSpaceDetection.occupied,
-            ParkingSpaceDetection.detected_at,
-        )
-        .where(ParkingSpaceDetection.detected_at >= since)
-        .order_by(ParkingSpaceDetection.detected_at.asc())
-    )
+    lot_filter = "        AND parking_lot_id = :lot_id" if lot_id is not None else ""
+    params = {"since": since}
     if lot_id is not None:
-        stmt = stmt.where(ParkingSpaceDetection.parking_lot_id == lot_id)
+        params["lot_id"] = lot_id
 
-    result = await db.execute(stmt)
-    states_by_bucket: dict[tuple[datetime, int], dict[str, bool]] = defaultdict(dict)
-
-    for row in result.all():
-        detected_lot_id = int(row.parking_lot_id)
-        space_key = row.parking_space_id or row.space_code
-        if not space_key:
-            continue
-
-        states_by_bucket[(hour_bucket(row.detected_at), detected_lot_id)][str(space_key)] = bool(row.occupied)
+    result = await db.execute(text(OCCUPANCY_SERIES_SQL.format(lot_filter=lot_filter)), params)
 
     bucket_totals: dict[datetime, list[int]] = defaultdict(lambda: [0, 0])
-    for (bucket, detected_lot_id), states in states_by_bucket.items():
-        lot_total = totals.get(detected_lot_id) or len(states)
+    for row in result.all():
+        detected_lot_id = int(row.parking_lot_id)
+        lot_total = totals.get(detected_lot_id) or int(row.spaces)
         if lot_total > 0:
-            bucket_totals[bucket][0] += lot_total
-            bucket_totals[bucket][1] += sum(states.values())
+            bucket_totals[row.bucket][0] += lot_total
+            bucket_totals[row.bucket][1] += int(row.occupied)
 
     series = [
         {
@@ -299,6 +312,19 @@ async def warm_default_stats(session_factory) -> None:
                 await heatmap_payload(db, lot_id=None, lookback_days=30)
     except Exception:
         pass
+
+
+def refresh_stats_if_due(session_factory) -> None:
+    # Between refreshes the cached payload keeps serving requests, so the
+    # hourly aggregates go stale by at most the configured interval.
+    global _last_stats_refresh
+
+    if time.monotonic() - _last_stats_refresh < STATS_REFRESH_MIN_INTERVAL_SECONDS:
+        return
+
+    _last_stats_refresh = time.monotonic()
+    invalidate_stats_cache()
+    asyncio.create_task(warm_default_stats(session_factory))
 
 
 @router.get("/stats/occupancy-forecast")

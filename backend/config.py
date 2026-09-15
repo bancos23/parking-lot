@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     session_idle_timeout_minutes: int = 60
     session_cookie_max_age_days: int = 7
     background_detection_interval_seconds: int = 30
+    detection_model_name: str = "yolo26s.pt"
+    background_detection_concurrency: int = 2
+    stats_refresh_min_interval_seconds: int = 600
 
     @property
     def database_url(self) -> str:

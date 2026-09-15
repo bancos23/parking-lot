@@ -982,6 +982,41 @@ input, select, textarea { font: inherit; color: inherit; }
   height: 100%;
   pointer-events: none;
 }
+.feed-fullscreen-toggle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 8px;
+  background: rgba(5, 7, 13, 0.72);
+  color: rgba(255,255,255,0.85);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.feed-stage:hover .feed-fullscreen-toggle,
+.feed-fullscreen-toggle:focus-visible,
+.feed-stage:fullscreen .feed-fullscreen-toggle,
+.feed-stage:-webkit-full-screen .feed-fullscreen-toggle {
+  opacity: 1;
+}
+.feed-fullscreen-toggle:hover {
+  background: rgba(255,255,255,0.16);
+}
+.feed-fullscreen-toggle svg {
+  width: 15px;
+  height: 15px;
+}
+.feed-stage:fullscreen,
+.feed-stage:-webkit-full-screen {
+  background: #000;
+}
 .feed-status-bar {
   min-height: 34px;
   display: flex;

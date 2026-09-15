@@ -1,5 +1,6 @@
 import asyncio
 import json
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +19,7 @@ from auth import get_current_account
 from config import settings
 from database import async_session, get_db
 from models import Account, ParkingLot, ParkingLotCamera, ParkingSpace, ParkingSpaceDetection
-from stats import invalidate_stats_cache, warm_default_stats
+from stats import refresh_stats_if_due
 from schemas import (
     BoundingBox,
     CameraDetectionBatch,
@@ -42,11 +43,17 @@ except ImportError:
     YOLO = None
 
 YOLO_MODELS: dict[str, Any] = {}
+YOLO_INFERENCE_LOCK = threading.Lock()
+CAPTURE_CACHE: dict[str, dict[str, Any]] = {}
+CAPTURE_CACHE_GUARD = threading.Lock()
+CAPTURE_IDLE_TTL_SECONDS = 600
+CAPTURE_GRAB_FLUSH_FRAMES = 2
 BACKEND_DIR = Path(__file__).resolve().parent
-YOLO26X_MODEL_NAME = "yolo26x.pt"
-YOLO26X_MODEL_PATH = BACKEND_DIR / YOLO26X_MODEL_NAME
+DETECTION_MODEL_NAME = settings.detection_model_name
+DETECTION_MODEL_PATH = BACKEND_DIR / DETECTION_MODEL_NAME
 DEBUG_OUTPUT_DIR = BACKEND_DIR / "debug_outputs"
 BACKGROUND_DETECTION_INTERVAL_SECONDS = settings.background_detection_interval_seconds
+BACKGROUND_DETECTION_CONCURRENCY = settings.background_detection_concurrency
 IMAGE_URL_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
 MJPEG_URL_EXTENSIONS = (".mjpeg", ".mjpg")
 URL_FRAME_TIMEOUT_SECONDS = 12
@@ -175,13 +182,61 @@ def require_detector_dependencies() -> None:
 def get_yolo_model():
     require_detector_dependencies()
 
-    model_path = str(YOLO26X_MODEL_PATH)
-    if not YOLO26X_MODEL_PATH.exists():
-        raise HTTPException(status_code=500, detail=f"YOLO model file not found: {YOLO26X_MODEL_PATH}")
+    # A bare model name lets ultralytics download it on first use when the
+    # file is not on disk yet.
+    model_key = str(DETECTION_MODEL_PATH) if DETECTION_MODEL_PATH.exists() else DETECTION_MODEL_NAME
 
-    if model_path not in YOLO_MODELS:
-        YOLO_MODELS[model_path] = YOLO(model_path)
-    return YOLO_MODELS[model_path]
+    if model_key not in YOLO_MODELS:
+        try:
+            YOLO_MODELS[model_key] = YOLO(model_key)
+        except Exception as error:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not load YOLO model {DETECTION_MODEL_NAME}: {error}",
+            ) from error
+    return YOLO_MODELS[model_key]
+
+
+_INFERENCE_ARGS: dict[str, Any] | None = None
+
+
+def detection_inference_args() -> dict[str, Any]:
+    global _INFERENCE_ARGS
+
+    if _INFERENCE_ARGS is None:
+        args: dict[str, Any] = {}
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                args = {"device": 0, "half": True}
+        except ImportError:
+            args = {}
+        _INFERENCE_ARGS = args
+        print(
+            f"[parking-detection] inference device={'cuda' if args else 'cpu'} "
+            f"half={bool(args)} model={DETECTION_MODEL_NAME}",
+            flush=True,
+        )
+    return _INFERENCE_ARGS
+
+
+def warm_up_occupancy_model() -> bool:
+    if cv2 is None or np is None or YOLO is None:
+        return False
+
+    try:
+        model = get_yolo_model()
+        model.predict(
+            np.zeros((64, 64, 3), dtype=np.uint8),
+            imgsz=64,
+            verbose=False,
+            **detection_inference_args(),
+        )
+    except Exception as error:
+        print(f"[parking-detection] occupancy model warm-up failed: {error}", flush=True)
+        return False
+    return True
 
 
 def is_http_source(source: str) -> bool:
@@ -338,6 +393,92 @@ def resolve_youtube_stream_url(source: str) -> str:
     return stream_url
 
 
+def capture_cache_entry(source: str) -> dict[str, Any]:
+    with CAPTURE_CACHE_GUARD:
+        entry = CAPTURE_CACHE.get(source)
+        if entry is None:
+            entry = {"lock": threading.Lock(), "capture": None, "last_used": time.monotonic()}
+            CAPTURE_CACHE[source] = entry
+        return entry
+
+
+def open_stream_capture(source: str):
+    capture = cv2.VideoCapture(source)
+    if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    return capture
+
+
+def read_frame_from_capture(capture):
+    # Flush buffered frames cheaply with grab() and decode only the last one.
+    for _ in range(CAPTURE_GRAB_FLUSH_FRAMES):
+        if not capture.grab():
+            break
+
+    ok, frame = capture.retrieve()
+    if ok and frame is not None:
+        return frame
+
+    ok, frame = capture.read()
+    if ok and frame is not None:
+        return frame
+    return None
+
+
+def release_capture_entry(entry: dict[str, Any]) -> None:
+    capture = entry["capture"]
+    entry["capture"] = None
+    if capture is not None:
+        capture.release()
+
+
+def read_stream_frame(cache_key: str, open_source: str):
+    entry = capture_cache_entry(cache_key)
+
+    with entry["lock"]:
+        entry["last_used"] = time.monotonic()
+
+        if entry["capture"] is not None:
+            frame = read_frame_from_capture(entry["capture"])
+            if frame is not None:
+                return frame
+            # Stale connection: drop it and reconnect once below.
+            release_capture_entry(entry)
+
+        capture = open_stream_capture(open_source)
+        frame = read_frame_from_capture(capture)
+
+        if frame is None:
+            capture.release()
+            raise HTTPException(status_code=422, detail=f"Could not read frame from: {open_source}")
+
+        entry["capture"] = capture
+        return frame
+
+
+def evict_idle_captures() -> None:
+    now = time.monotonic()
+    with CAPTURE_CACHE_GUARD:
+        stale = [
+            (source, entry)
+            for source, entry in CAPTURE_CACHE.items()
+            if now - entry["last_used"] > CAPTURE_IDLE_TTL_SECONDS
+        ]
+
+    for source, entry in stale:
+        if not entry["lock"].acquire(blocking=False):
+            continue
+        try:
+            if now - entry["last_used"] <= CAPTURE_IDLE_TTL_SECONDS:
+                continue
+            with CAPTURE_CACHE_GUARD:
+                if CAPTURE_CACHE.get(source) is entry:
+                    CAPTURE_CACHE.pop(source, None)
+            release_capture_entry(entry)
+        finally:
+            entry["lock"].release()
+
+
 def read_camera_frame(camera_stream_url: str, image_path: str | None):
     require_detector_dependencies()
 
@@ -351,6 +492,7 @@ def read_camera_frame(camera_stream_url: str, image_path: str | None):
             raise HTTPException(status_code=422, detail=f"Could not read image: {source}")
         return image, source
 
+    original_source = source
     if is_youtube_source(source):
         source = resolve_youtube_stream_url(source)
 
@@ -359,23 +501,12 @@ def read_camera_frame(camera_stream_url: str, image_path: str | None):
         if image_frame is not None:
             return image_frame
 
-    capture = cv2.VideoCapture(source)
     try:
-        if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
-            capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-        frame = None
-        for _ in range(3):
-            ok, candidate = capture.read()
-            if ok and candidate is not None:
-                frame = candidate
-    finally:
-        capture.release()
-
-    if frame is None:
-        raise HTTPException(status_code=422, detail=f"Could not read frame from: {source}")
-
-    return frame, source
+        return read_stream_frame(original_source, source), source
+    except HTTPException:
+        if original_source != source:
+            YOUTUBE_STREAM_CACHE.pop(original_source, None)
+        raise
 
 
 def resolve_output_path(output_path: str) -> Path:
@@ -792,13 +923,17 @@ def run_yolo_camera_detection(
     if body.save_frame_path:
         write_debug_image(body.save_frame_path, image, "captured frame")
 
-    results = model.predict(
-        image,
-        conf=body.confidence,
-        imgsz=body.image_size,
-        classes=body.vehicle_classes,
-        verbose=False,
-    )[0]
+    # model.predict shares predictor state on the model instance, so
+    # concurrent camera scans must not interleave inference calls.
+    with YOLO_INFERENCE_LOCK:
+        results = model.predict(
+            image,
+            conf=body.confidence,
+            imgsz=body.image_size,
+            classes=body.vehicle_classes,
+            verbose=False,
+            **detection_inference_args(),
+        )[0]
 
     boxes = yolo_boxes(results)
     occupied, available, spot_results = calculate_camera_parking_status(
@@ -816,14 +951,14 @@ def run_yolo_camera_detection(
             spot_results=spot_results,
             occupied=occupied,
             available=available,
-            model_name=YOLO26X_MODEL_NAME,
+            model_name=DETECTION_MODEL_NAME,
             output_path=body.save_output_path,
         )
 
     return {
         "image_source": image_source,
-        "model": YOLO26X_MODEL_NAME,
-        "model_path": str(YOLO26X_MODEL_PATH),
+        "model": DETECTION_MODEL_NAME,
+        "model_path": str(DETECTION_MODEL_PATH),
         "image_width": image.shape[1],
         "image_height": image.shape[0],
         "regions_configured": len(regions),
@@ -981,7 +1116,7 @@ def detection_request_payload(camera: ParkingLotCamera, body: CameraOccupancyDet
         "[parking-detection] detect request "
         f"camera_id={camera.id} "
         f"debug={body.debug} "
-        f"model_path={YOLO26X_MODEL_PATH} "
+        f"model_path={DETECTION_MODEL_PATH} "
         f"image_path={body.image_path} "
         f"stream_url={camera.stream_url} "
         f"save_frame_path={body.save_frame_path} "
@@ -994,6 +1129,7 @@ async def run_camera_occupancy_detection(
     camera_id: int,
     body: CameraOccupancyDetectionRequest,
     db: AsyncSession,
+    refresh_stats: bool = True,
 ) -> DetectionUpdateResponse:
     require_detector_dependencies()
 
@@ -1027,7 +1163,9 @@ async def run_camera_occupancy_detection(
 
     print(detection_request_payload(camera, body), flush=True)
 
+    detection_started = time.monotonic()
     detection_result = await run_in_threadpool(run_yolo_camera_detection, camera.stream_url, regions, body)
+    detection_elapsed = time.monotonic() - detection_started
     detection_source = body.source or f"yolo:{detection_result['model']}"
     debug_payload = None
 
@@ -1052,7 +1190,8 @@ async def run_camera_occupancy_detection(
         f"occupied={detection_result['occupied']} "
         f"available={detection_result['available']} "
         f"image={detection_result['image_width']}x{detection_result['image_height']} "
-        f"regions={detection_result['regions_used']}",
+        f"regions={detection_result['regions_used']} "
+        f"elapsed={detection_elapsed:.2f}s",
         flush=True,
     )
 
@@ -1122,8 +1261,7 @@ async def run_camera_occupancy_detection(
         }
 
     await db.commit()
-    invalidate_stats_cache()
-    asyncio.create_task(warm_default_stats(async_session))
+    refresh_stats_if_due(async_session)
 
     return DetectionUpdateResponse(
         parking_lot_id=camera.parking_lot_id,
@@ -1155,20 +1293,15 @@ async def active_occupancy_camera_ids(session_factory) -> list[int]:
         return list(result.scalars().all())
 
 
-async def detect_active_camera_occupancy_once(session_factory) -> None:
-    camera_ids = await active_occupancy_camera_ids(session_factory)
-    if not camera_ids:
-        return
-
-    print(f"[parking-detection] background scan cameras={len(camera_ids)}", flush=True)
-
-    for camera_id in camera_ids:
+async def scan_camera_with_session(session_factory, camera_id: int, semaphore: asyncio.Semaphore) -> None:
+    async with semaphore:
         async with session_factory() as db:
             try:
                 await run_camera_occupancy_detection(
                     camera_id,
                     CameraOccupancyDetectionRequest(source="background-live-feed"),
                     db,
+                    refresh_stats=False,
                 )
             except HTTPException as error:
                 await db.rollback()
@@ -1187,6 +1320,30 @@ async def detect_active_camera_occupancy_once(session_factory) -> None:
                     f"error={error}",
                     flush=True,
                 )
+
+
+async def detect_active_camera_occupancy_once(session_factory) -> None:
+    camera_ids = await active_occupancy_camera_ids(session_factory)
+    if not camera_ids:
+        return
+
+    print(
+        f"[parking-detection] background scan cameras={len(camera_ids)} "
+        f"concurrency={BACKGROUND_DETECTION_CONCURRENCY}",
+        flush=True,
+    )
+
+    semaphore = asyncio.Semaphore(BACKGROUND_DETECTION_CONCURRENCY)
+    await asyncio.gather(
+        *(scan_camera_with_session(session_factory, camera_id, semaphore) for camera_id in camera_ids)
+    )
+
+    # One debounced refresh per cycle instead of one per camera.
+    refresh_stats_if_due(session_factory)
+    try:
+        await run_in_threadpool(evict_idle_captures)
+    except Exception as error:
+        print(f"[parking-detection] capture cache eviction failed error={error}", flush=True)
 
 
 async def background_occupancy_detection_loop(
@@ -1510,8 +1667,7 @@ async def receive_camera_detections(
         }
 
     await db.commit()
-    invalidate_stats_cache()
-    asyncio.create_task(warm_default_stats(async_session))
+    refresh_stats_if_due(async_session)
 
     return DetectionUpdateResponse(
         parking_lot_id=camera.parking_lot_id,

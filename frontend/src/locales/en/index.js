@@ -109,6 +109,8 @@ const en = {
     'lot.live_camera': 'Live camera',
     'camera.occupancy.loading': 'Checking occupancy...',
     'camera.occupancy.updated': 'Updated',
+    'camera.fullscreen.enter': 'Enter fullscreen',
+    'camera.fullscreen.exit': 'Exit fullscreen',
 
     'stats.title': 'Statistics',
     'stats.sub': 'Baia Mare network · updated 1 min ago',

@@ -42,6 +42,7 @@ const imageFailed = ref(false)
 const occupancy = ref(null)
 const occupancyLoading = ref(false)
 const occupancyError = ref('')
+const isStageFullscreen = ref(false)
 
 let resizeObserver
 let occupancyTimer
@@ -350,6 +351,38 @@ function syncOverlaySize() {
   drawOccupancyOverlay()
 }
 
+const FULLSCREEN_CHANGE_EVENT = typeof document !== 'undefined' && 'onfullscreenchange' in document
+  ? 'fullscreenchange'
+  : 'webkitfullscreenchange'
+
+function currentFullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null
+}
+
+function handleStageFullscreenChange() {
+  isStageFullscreen.value = currentFullscreenElement() === stageRef.value
+  requestAnimationFrame(syncOverlaySize)
+}
+
+function toggleStageFullscreen() {
+  const stage = stageRef.value
+  if (!stage) return
+
+  if (currentFullscreenElement()) {
+    const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen
+    exitFullscreen?.call(document)
+    return
+  }
+
+  const requestFullscreen = stage.requestFullscreen || stage.webkitRequestFullscreen
+  if (typeof requestFullscreen !== 'function') return
+
+  const result = requestFullscreen.call(stage)
+  if (typeof result?.catch === 'function') {
+    result.catch(() => { })
+  }
+}
+
 function tryAutoplayMedia() {
   const media = mediaRef.value
   if (typeof media?.play !== 'function') return
@@ -544,6 +577,7 @@ onMounted(() => {
     resizeObserver.observe(stageRef.value)
   }
 
+  document.addEventListener(FULLSCREEN_CHANGE_EVENT, handleStageFullscreenChange)
   window.addEventListener('resize', syncOverlaySize)
   nextTick(syncOverlaySize)
   startOccupancyPolling()
@@ -552,6 +586,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopOccupancyPolling()
   resizeObserver?.disconnect()
+  document.removeEventListener(FULLSCREEN_CHANGE_EVENT, handleStageFullscreenChange)
   window.removeEventListener('resize', syncOverlaySize)
 })
 
@@ -587,12 +622,12 @@ defineExpose({
         crossorigin="anonymous" @error="imageFailed = true" @load="syncOverlaySize" />
 
       <video v-else-if="!isRtspFeed && !isYouTubeFeed && !videoFailed" ref="mediaRef" class="feed-media"
-        :src="normalizedUrl" controls autoplay muted playsinline preload="auto" crossorigin="anonymous"
-        @error="videoFailed = true" @loadedmetadata="handleVideoReady" @loadeddata="handleVideoReady"
-        @canplay="handleVideoReady" />
+        :src="normalizedUrl" controls controlslist="nofullscreen" autoplay muted playsinline preload="auto"
+        crossorigin="anonymous" @error="videoFailed = true" @loadedmetadata="handleVideoReady"
+        @loadeddata="handleVideoReady" @canplay="handleVideoReady" />
 
       <iframe v-else-if="showFrameFallback" class="feed-frame" :src="iframeUrl" :title="cameraName" loading="lazy"
-        :referrerpolicy="iframeReferrerPolicy" allowfullscreen
+        :referrerpolicy="iframeReferrerPolicy"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" />
 
       <div v-else class="feed-placeholder">
@@ -600,6 +635,20 @@ defineExpose({
       </div>
 
       <canvas ref="overlayCanvas" class="feed-yolo-overlay" :style="overlayStyle" aria-hidden="true"></canvas>
+
+      <button v-if="!isRtspFeed || showFrameFallback" type="button" class="feed-fullscreen-toggle"
+        :title="isStageFullscreen ? t('camera.fullscreen.exit') : t('camera.fullscreen.enter')"
+        :aria-label="isStageFullscreen ? t('camera.fullscreen.exit') : t('camera.fullscreen.enter')"
+        @click="toggleStageFullscreen">
+        <svg v-if="isStageFullscreen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+        </svg>
+        <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+        </svg>
+      </button>
     </div>
 
     <div class="feed-status-bar">

@@ -14,6 +14,7 @@ from detections import (
     router as detections_router,
     start_occupancy_detection_scheduler,
     stop_occupancy_detection_scheduler,
+    warm_up_occupancy_model,
 )
 from lots import router as lots_router
 from models import Account, AccountSession, UserRole
@@ -314,6 +315,7 @@ async def lifespan(app: FastAPI):
     await clear_expired_sessions()
     warm_up_plate_ocr()
     warm_up_plate_model()
+    warm_up_occupancy_model()
     async with async_session() as db:
         for role_name in DEFAULT_ROLES:
             exists = await db.execute(select(UserRole).where(UserRole.name == role_name))

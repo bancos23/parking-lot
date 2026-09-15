@@ -106,6 +106,8 @@ const ro = {
         'lot.live_camera': 'Camera live',
         'camera.occupancy.loading': 'Se verifică ocuparea...',
         'camera.occupancy.updated': 'Actualizat',
+        'camera.fullscreen.enter': 'Ecran complet',
+        'camera.fullscreen.exit': 'Ieși din ecran complet',
 
         'stats.title': 'Statistici',
         'stats.sub': 'Rețea Baia Mare · actualizat acum 1 minut',
