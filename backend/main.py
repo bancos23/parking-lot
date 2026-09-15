@@ -233,31 +233,73 @@ SCHEMA_UPGRADE_STATEMENTS = [
     END $$;
     """,
     "ALTER TABLE parking_lots DROP COLUMN IF EXISTS total_spots",
+    "CREATE INDEX IF NOT EXISTS ix_parking_detection_snapshots_spaces ON parking_detection_snapshots USING GIN (spaces jsonb_path_ops)",
     """
-    CREATE TABLE IF NOT EXISTS parking_space_detections (
-        id SERIAL PRIMARY KEY,
-        parking_lot_id INTEGER NOT NULL REFERENCES parking_lots(id),
-        camera_id INTEGER NOT NULL REFERENCES parking_lot_cameras(id),
-        parking_space_id INTEGER REFERENCES parking_spaces(id),
-        space_code VARCHAR(30),
-        previous_status VARCHAR(30),
-        status VARCHAR(30) NOT NULL,
-        occupied BOOLEAN NOT NULL,
-        confidence DOUBLE PRECISION,
-        match_iou DOUBLE PRECISION,
-        bounding_box JSONB,
-        polygon JSONB,
-        raw_detection JSONB,
-        source VARCHAR(120),
-        detected_at TIMESTAMP WITH TIME ZONE NOT NULL,
-        received_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
-    )
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_name = 'parking_space_detections'
+      ) AND NOT EXISTS (
+        SELECT 1
+        FROM parking_detection_snapshots
+        LIMIT 1
+      ) THEN
+        INSERT INTO parking_detection_snapshots (
+          parking_lot_id,
+          camera_id,
+          source,
+          detected_at,
+          received_at,
+          occupied_count,
+          spaces_count,
+          spaces,
+          unmatched
+        )
+        SELECT
+          parking_lot_id,
+          camera_id,
+          min(source),
+          detected_at,
+          min(received_at),
+          count(*) FILTER (WHERE parking_space_id IS NOT NULL AND occupied),
+          count(*) FILTER (WHERE parking_space_id IS NOT NULL),
+          coalesce(
+            jsonb_agg(
+              jsonb_build_object(
+                'parking_space_id', parking_space_id,
+                'space_code', space_code,
+                'previous_status', previous_status,
+                'status', status,
+                'occupied', occupied,
+                'confidence', confidence,
+                'match_iou', match_iou,
+                'bounding_box', bounding_box,
+                'raw_detection', raw_detection
+              ) ORDER BY id
+            ) FILTER (WHERE parking_space_id IS NOT NULL),
+            '[]'::jsonb
+          ),
+          jsonb_agg(
+            jsonb_build_object(
+              'parking_space_id', parking_space_id,
+              'space_code', space_code,
+              'status', status,
+              'occupied', occupied,
+              'confidence', confidence,
+              'match_iou', match_iou,
+              'bounding_box', bounding_box,
+              'polygon', polygon,
+              'raw_detection', raw_detection,
+              'detected_at', detected_at
+            ) ORDER BY id
+          ) FILTER (WHERE parking_space_id IS NULL)
+        FROM parking_space_detections
+        GROUP BY parking_lot_id, camera_id, detected_at;
+      END IF;
+    END $$;
     """,
-    "CREATE INDEX IF NOT EXISTS ix_parking_space_detections_parking_lot_id ON parking_space_detections (parking_lot_id)",
-    "CREATE INDEX IF NOT EXISTS ix_parking_space_detections_camera_id ON parking_space_detections (camera_id)",
-    "CREATE INDEX IF NOT EXISTS ix_parking_space_detections_parking_space_id ON parking_space_detections (parking_space_id)",
-    "CREATE INDEX IF NOT EXISTS ix_parking_space_detections_space_code ON parking_space_detections (space_code)",
-    "CREATE INDEX IF NOT EXISTS ix_parking_space_detections_detected_at ON parking_space_detections (detected_at)",
     """
     CREATE TABLE IF NOT EXISTS license_plate_detection_history (
         id SERIAL PRIMARY KEY,

@@ -323,29 +323,24 @@ class CameraOccupancyResponse(BaseModel):
     spaces: list[SpaceDetectionPayload]
 
 
-class ParkingSpaceDetectionResponse(BaseModel):
+class ParkingDetectionSnapshotResponse(BaseModel):
     id: int
     parking_lot_id: int
     camera_id: int
-    parking_space_id: int | None
-    space_code: str | None
-    previous_status: str | None
-    status: str
-    occupied: bool
-    confidence: float | None
-    match_iou: float | None
-    polygon: ParkingSpacePolygon | None
-    bounding_box: BoundingBox | None
-    raw_detection: dict[str, Any] | None
     source: str | None
     detected_at: datetime
     received_at: datetime
+    occupied_count: int
+    spaces_count: int
+    spaces: list[dict[str, Any]]
+    unmatched: list[dict[str, Any]] | None = None
+    meta: dict[str, Any] | None = None
 
     model_config = {"from_attributes": True}
 
 
 class DetectionHistoryResponse(BaseModel):
-    detections: list[ParkingSpaceDetectionResponse]
+    detections: list[ParkingDetectionSnapshotResponse]
 
 
 class LicensePlateDetectionHistoryItem(BaseModel):

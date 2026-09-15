@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -115,7 +116,6 @@ class ParkingSpace(Base):
 
     parking_lot: Mapped[Optional["ParkingLot"]] = relationship(back_populates="spaces")
     camera: Mapped[Optional["ParkingLotCamera"]] = relationship(back_populates="spaces")
-    detections: Mapped[list["ParkingSpaceDetection"]] = relationship(back_populates="space")
 
 
 class ParkingLot(Base):
@@ -141,7 +141,7 @@ class ParkingLot(Base):
         cascade="all, delete-orphan",
     )
     spaces: Mapped[list["ParkingSpace"]] = relationship(back_populates="parking_lot")
-    detections: Mapped[list["ParkingSpaceDetection"]] = relationship(back_populates="parking_lot")
+    detection_snapshots: Mapped[list["ParkingDetectionSnapshot"]] = relationship(back_populates="parking_lot")
 
 
 class ParkingLotCamera(Base):
@@ -161,32 +161,26 @@ class ParkingLotCamera(Base):
     parking_lot: Mapped["ParkingLot"] = relationship(back_populates="cameras")
     created_by: Mapped[Optional["Account"]] = relationship(back_populates="created_parking_cameras")
     spaces: Mapped[list["ParkingSpace"]] = relationship(back_populates="camera")
-    detections: Mapped[list["ParkingSpaceDetection"]] = relationship(back_populates="camera")
+    detection_snapshots: Mapped[list["ParkingDetectionSnapshot"]] = relationship(back_populates="camera")
 
 
-class ParkingSpaceDetection(Base):
-    __tablename__ = "parking_space_detections"
+class ParkingDetectionSnapshot(Base):
+    __tablename__ = "parking_detection_snapshots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     parking_lot_id: Mapped[int] = mapped_column(ForeignKey("parking_lots.id"), nullable=False, index=True)
     camera_id: Mapped[int] = mapped_column(ForeignKey("parking_lot_cameras.id"), nullable=False, index=True)
-    parking_space_id: Mapped[Optional[int]] = mapped_column(ForeignKey("parking_spaces.id"), nullable=True, index=True)
-    space_code: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, index=True)
-    previous_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
-    status: Mapped[str] = mapped_column(String(30), nullable=False)
-    occupied: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    match_iou: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    bounding_box: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    polygon: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    raw_detection: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     source: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    occupied_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    spaces_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    spaces: Mapped[list] = mapped_column(JSONB, nullable=False)
+    unmatched: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    meta: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
-    parking_lot: Mapped["ParkingLot"] = relationship(back_populates="detections")
-    camera: Mapped["ParkingLotCamera"] = relationship(back_populates="detections")
-    space: Mapped[Optional["ParkingSpace"]] = relationship(back_populates="detections")
+    parking_lot: Mapped["ParkingLot"] = relationship(back_populates="detection_snapshots")
+    camera: Mapped["ParkingLotCamera"] = relationship(back_populates="detection_snapshots")
 
 
 class LicensePlateDetectionHistory(Base):

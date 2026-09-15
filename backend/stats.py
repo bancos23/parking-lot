@@ -185,31 +185,31 @@ async def active_space_totals(db: AsyncSession, lot_id: int | None) -> dict[int,
 
 
 OCCUPANCY_SERIES_SQL = """
-WITH last_states AS (
+WITH last_snapshots AS (
     SELECT DISTINCT ON (
         date_trunc('hour', detected_at AT TIME ZONE 'UTC'),
         parking_lot_id,
-        COALESCE(parking_space_id::text, space_code)
+        camera_id
     )
         parking_lot_id,
         date_trunc('hour', detected_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket,
-        occupied
-    FROM parking_space_detections
+        occupied_count,
+        spaces_count
+    FROM parking_detection_snapshots
     WHERE detected_at >= :since
-        AND COALESCE(parking_space_id::text, space_code) IS NOT NULL
 {lot_filter}
     ORDER BY
         date_trunc('hour', detected_at AT TIME ZONE 'UTC'),
         parking_lot_id,
-        COALESCE(parking_space_id::text, space_code),
+        camera_id,
         detected_at DESC
 )
 SELECT
     bucket,
     parking_lot_id,
-    count(*) AS spaces,
-    count(*) FILTER (WHERE occupied) AS occupied
-FROM last_states
+    sum(spaces_count) AS spaces,
+    sum(occupied_count) AS occupied
+FROM last_snapshots
 GROUP BY bucket, parking_lot_id
 ORDER BY bucket
 """

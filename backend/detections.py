@@ -18,7 +18,7 @@ from starlette.concurrency import run_in_threadpool
 from auth import get_current_account
 from config import settings
 from database import async_session, get_db
-from models import Account, ParkingLot, ParkingLotCamera, ParkingSpace, ParkingSpaceDetection
+from models import Account, ParkingLot, ParkingLotCamera, ParkingDetectionSnapshot, ParkingSpace
 from stats import refresh_stats_if_due
 from schemas import (
     BoundingBox,
@@ -27,7 +27,7 @@ from schemas import (
     CameraOccupancyResponse,
     DetectionHistoryResponse,
     DetectionUpdateResponse,
-    ParkingSpaceDetectionResponse,
+    ParkingDetectionSnapshotResponse,
     ParkingSpacePolygon,
 )
 
@@ -1196,6 +1196,7 @@ async def run_camera_occupancy_detection(
     )
 
     detections_by_space_id: dict[int, dict[str, Any]] = {}
+    snapshot_spaces: list[dict[str, Any]] = []
 
     for spot_result in detection_result["spot_results"]:
         space = spot_result["space"]
@@ -1204,45 +1205,28 @@ async def run_camera_occupancy_detection(
         vehicle = spot_result["vehicle"]
         vehicle_box = detection_box_payload(vehicle["box"]) if vehicle else None
         confidence = vehicle["conf"] if vehicle else None
-        raw_detection = {
-            "model": detection_result["model"],
-            "image_source": detection_result["image_source"],
-            "image_width": detection_result["image_width"],
-            "image_height": detection_result["image_height"],
-            "regions_configured": detection_result["regions_configured"],
-            "regions_used": detection_result["regions_used"],
-            "total_vehicle_detections": detection_result["detections"],
-            "occupied_threshold": body.occupied_threshold,
-            "overlap": spot_result["overlap"],
-            "anchor_hit": spot_result["anchor_hit"],
-            "vehicle": {
-                "class_id": vehicle["class_id"],
-                "class_name": vehicle.get("class_name"),
-                "confidence": vehicle["conf"],
-                "bounding_box": vehicle_box,
-            }
-            if vehicle
-            else None,
-        }
 
         space.status = new_status
-        db.add(
-            ParkingSpaceDetection(
-                parking_lot_id=camera.parking_lot_id,
-                camera_id=camera.id,
-                parking_space_id=space.id,
-                space_code=space.code,
-                previous_status=previous_status,
-                status=new_status,
-                occupied=spot_result["occupied"],
-                confidence=confidence,
-                match_iou=spot_result["overlap"],
-                bounding_box=vehicle_box,
-                polygon=space.polygon,
-                raw_detection=raw_detection,
-                source=detection_source,
-                detected_at=generated_at,
-            )
+        snapshot_spaces.append(
+            {
+                "parking_space_id": space.id,
+                "space_code": space.code,
+                "previous_status": previous_status,
+                "status": new_status,
+                "occupied": spot_result["occupied"],
+                "confidence": confidence,
+                "match_iou": spot_result["overlap"],
+                "anchor_hit": spot_result["anchor_hit"],
+                "bounding_box": vehicle_box,
+                "vehicle": {
+                    "class_id": vehicle["class_id"],
+                    "class_name": vehicle.get("class_name"),
+                    "confidence": vehicle["conf"],
+                    "bounding_box": vehicle_box,
+                }
+                if vehicle
+                else None,
+            }
         )
 
         detections_by_space_id[space.id] = {
@@ -1259,6 +1243,28 @@ async def run_camera_occupancy_detection(
             "anchor_hit": spot_result["anchor_hit"],
             "detected_at": generated_at,
         }
+
+    db.add(
+        ParkingDetectionSnapshot(
+            parking_lot_id=camera.parking_lot_id,
+            camera_id=camera.id,
+            source=detection_source,
+            detected_at=generated_at,
+            occupied_count=sum(1 for entry in snapshot_spaces if entry["occupied"]),
+            spaces_count=len(snapshot_spaces),
+            spaces=snapshot_spaces,
+            meta={
+                "model": detection_result["model"],
+                "image_source": detection_result["image_source"],
+                "image_width": detection_result["image_width"],
+                "image_height": detection_result["image_height"],
+                "regions_configured": detection_result["regions_configured"],
+                "regions_used": detection_result["regions_used"],
+                "total_vehicle_detections": detection_result["detections"],
+                "occupied_threshold": body.occupied_threshold,
+            },
+        )
+    )
 
     await db.commit()
     refresh_stats_if_due(async_session)
@@ -1523,22 +1529,22 @@ async def lot_detection_history(
     if not lot:
         raise HTTPException(status_code=404, detail="Parking lot not found")
 
-    query = select(ParkingSpaceDetection).where(ParkingSpaceDetection.parking_lot_id == lot_id)
+    query = select(ParkingDetectionSnapshot).where(ParkingDetectionSnapshot.parking_lot_id == lot_id)
     if camera_id is not None:
-        query = query.where(ParkingSpaceDetection.camera_id == camera_id)
+        query = query.where(ParkingDetectionSnapshot.camera_id == camera_id)
     if space_id is not None:
-        query = query.where(ParkingSpaceDetection.parking_space_id == space_id)
+        query = query.where(ParkingDetectionSnapshot.spaces.contains([{"parking_space_id": space_id}]))
     if since is not None:
-        query = query.where(ParkingSpaceDetection.detected_at >= since)
+        query = query.where(ParkingDetectionSnapshot.detected_at >= since)
     if until is not None:
-        query = query.where(ParkingSpaceDetection.detected_at <= until)
+        query = query.where(ParkingDetectionSnapshot.detected_at <= until)
 
-    result = await db.execute(query.order_by(ParkingSpaceDetection.detected_at.desc()).limit(limit))
-    detections = result.scalars().all()
+    result = await db.execute(query.order_by(ParkingDetectionSnapshot.detected_at.desc()).limit(limit))
+    snapshots = result.scalars().all()
     return DetectionHistoryResponse(
         detections=[
-            ParkingSpaceDetectionResponse.model_validate(detection)
-            for detection in detections
+            ParkingDetectionSnapshotResponse.model_validate(snapshot)
+            for snapshot in snapshots
         ]
     )
 
@@ -1586,6 +1592,8 @@ async def receive_camera_detections(
     generated_at = body.generated_at or datetime.now(timezone.utc)
     detections_by_space_id: dict[int, dict[str, Any]] = {}
     unmatched: list[dict[str, Any]] = []
+    snapshot_spaces: list[dict[str, Any]] = []
+    snapshot_unmatched: list[dict[str, Any]] = []
 
     for detection in body.detections:
         detected_at = detection.detected_at or generated_at
@@ -1602,23 +1610,19 @@ async def receive_camera_detections(
         new_status = detection_status(detection.occupied, detection.status)
 
         if not space:
-            db.add(
-                ParkingSpaceDetection(
-                    parking_lot_id=camera.parking_lot_id,
-                    camera_id=camera.id,
-                    parking_space_id=None,
-                    space_code=detection.space_code.strip().upper() if detection.space_code else None,
-                    previous_status=None,
-                    status=new_status,
-                    occupied=new_status == "occupied",
-                    confidence=detection.confidence,
-                    match_iou=match_iou,
-                    bounding_box=incoming_box,
-                    polygon=incoming_polygon,
-                    raw_detection=raw_detection,
-                    source=body.source,
-                    detected_at=detected_at,
-                )
+            snapshot_unmatched.append(
+                {
+                    "parking_space_id": None,
+                    "space_code": detection.space_code.strip().upper() if detection.space_code else None,
+                    "status": new_status,
+                    "occupied": new_status == "occupied",
+                    "confidence": detection.confidence,
+                    "match_iou": match_iou,
+                    "bounding_box": incoming_box,
+                    "polygon": incoming_polygon,
+                    "detected_at": detected_at,
+                    "raw_detection": raw_detection,
+                }
             )
             unmatched.append(
                 {
@@ -1637,23 +1641,19 @@ async def receive_camera_detections(
 
         previous_status = space.status
         space.status = new_status
-        db.add(
-            ParkingSpaceDetection(
-                parking_lot_id=camera.parking_lot_id,
-                camera_id=camera.id,
-                parking_space_id=space.id,
-                space_code=space.code,
-                previous_status=previous_status,
-                status=new_status,
-                occupied=new_status == "occupied",
-                confidence=detection.confidence,
-                match_iou=match_iou,
-                bounding_box=incoming_box,
-                polygon=incoming_polygon,
-                raw_detection=raw_detection,
-                source=body.source,
-                detected_at=detected_at,
-            )
+        snapshot_spaces.append(
+            {
+                "parking_space_id": space.id,
+                "space_code": space.code,
+                "previous_status": previous_status,
+                "status": new_status,
+                "occupied": new_status == "occupied",
+                "confidence": detection.confidence,
+                "match_iou": match_iou,
+                "bounding_box": incoming_box,
+                "detected_at": detected_at,
+                "raw_detection": raw_detection,
+            }
         )
         detections_by_space_id[space.id] = {
             "matched": True,
@@ -1665,6 +1665,23 @@ async def receive_camera_detections(
             "match_iou": match_iou,
             "detected_at": detected_at,
         }
+
+    db.add(
+        ParkingDetectionSnapshot(
+            parking_lot_id=camera.parking_lot_id,
+            camera_id=camera.id,
+            source=body.source,
+            detected_at=generated_at,
+            occupied_count=sum(1 for entry in snapshot_spaces if entry["occupied"]),
+            spaces_count=len(snapshot_spaces),
+            spaces=snapshot_spaces,
+            unmatched=snapshot_unmatched or None,
+            meta={
+                "detections_received": len(body.detections),
+                "min_iou": body.min_iou,
+            },
+        )
+    )
 
     await db.commit()
     refresh_stats_if_due(async_session)
