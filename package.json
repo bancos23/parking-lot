@@ -15,7 +15,7 @@
     "install:all": "npm run install:frontend && npm run install:backend"
   },
   "devDependencies": {
-    "concurrently": "10.0.3"
+    "concurrently": "10.0.5"
   },
   "engines": {
     "node": "^22.0.0",
