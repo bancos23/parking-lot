@@ -44,9 +44,6 @@ except ImportError:
 
 YOLO_MODELS: dict[str, Any] = {}
 YOLO_INFERENCE_LOCK = threading.Lock()
-CAPTURE_CACHE: dict[str, dict[str, Any]] = {}
-CAPTURE_CACHE_GUARD = threading.Lock()
-CAPTURE_IDLE_TTL_SECONDS = 600
 CAPTURE_GRAB_FLUSH_FRAMES = 2
 BACKEND_DIR = Path(__file__).resolve().parent
 DETECTION_MODEL_NAME = settings.detection_model_name
@@ -374,7 +371,7 @@ def resolve_youtube_stream_url(source: str) -> str:
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
-        "format": "best[height<=1080]/best",
+        "format": "bestvideo[height<=1080]/bestvideo/best",
     }
     try:
         with YoutubeDL(options) as downloader:
@@ -391,15 +388,6 @@ def resolve_youtube_stream_url(source: str) -> str:
         "expires_at": now + YOUTUBE_STREAM_CACHE_SECONDS,
     }
     return stream_url
-
-
-def capture_cache_entry(source: str) -> dict[str, Any]:
-    with CAPTURE_CACHE_GUARD:
-        entry = CAPTURE_CACHE.get(source)
-        if entry is None:
-            entry = {"lock": threading.Lock(), "capture": None, "last_used": time.monotonic()}
-            CAPTURE_CACHE[source] = entry
-        return entry
 
 
 def open_stream_capture(source: str):
@@ -425,58 +413,15 @@ def read_frame_from_capture(capture):
     return None
 
 
-def release_capture_entry(entry: dict[str, Any]) -> None:
-    capture = entry["capture"]
-    entry["capture"] = None
-    if capture is not None:
-        capture.release()
-
-
-def read_stream_frame(cache_key: str, open_source: str):
-    entry = capture_cache_entry(cache_key)
-
-    with entry["lock"]:
-        entry["last_used"] = time.monotonic()
-
-        if entry["capture"] is not None:
-            frame = read_frame_from_capture(entry["capture"])
-            if frame is not None:
-                return frame
-            # Stale connection: drop it and reconnect once below.
-            release_capture_entry(entry)
-
-        capture = open_stream_capture(open_source)
+def read_stream_frame(source: str):
+    capture = open_stream_capture(source)
+    try:
         frame = read_frame_from_capture(capture)
-
         if frame is None:
-            capture.release()
-            raise HTTPException(status_code=422, detail=f"Could not read frame from: {open_source}")
-
-        entry["capture"] = capture
+            raise HTTPException(status_code=422, detail=f"Could not read frame from: {source}")
         return frame
-
-
-def evict_idle_captures() -> None:
-    now = time.monotonic()
-    with CAPTURE_CACHE_GUARD:
-        stale = [
-            (source, entry)
-            for source, entry in CAPTURE_CACHE.items()
-            if now - entry["last_used"] > CAPTURE_IDLE_TTL_SECONDS
-        ]
-
-    for source, entry in stale:
-        if not entry["lock"].acquire(blocking=False):
-            continue
-        try:
-            if now - entry["last_used"] <= CAPTURE_IDLE_TTL_SECONDS:
-                continue
-            with CAPTURE_CACHE_GUARD:
-                if CAPTURE_CACHE.get(source) is entry:
-                    CAPTURE_CACHE.pop(source, None)
-            release_capture_entry(entry)
-        finally:
-            entry["lock"].release()
+    finally:
+        capture.release()
 
 
 def read_camera_frame(camera_stream_url: str, image_path: str | None):
@@ -502,7 +447,7 @@ def read_camera_frame(camera_stream_url: str, image_path: str | None):
             return image_frame
 
     try:
-        return read_stream_frame(original_source, source), source
+        return read_stream_frame(source), source
     except HTTPException:
         if original_source != source:
             YOUTUBE_STREAM_CACHE.pop(original_source, None)
@@ -1346,10 +1291,6 @@ async def detect_active_camera_occupancy_once(session_factory) -> None:
 
     # One debounced refresh per cycle instead of one per camera.
     refresh_stats_if_due(session_factory)
-    try:
-        await run_in_threadpool(evict_idle_captures)
-    except Exception as error:
-        print(f"[parking-detection] capture cache eviction failed error={error}", flush=True)
 
 
 async def background_occupancy_detection_loop(
