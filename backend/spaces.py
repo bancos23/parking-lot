@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth import account_response, get_current_account, get_optional_account
+from auth import account_response, get_current_account, get_optional_account, require_management_access
 from database import get_db
 from models import Account, ParkingLot, ParkingLotCamera, ParkingSpace
 from schemas import ParkingSpaceCreate, ParkingSpaceResponse, SpacesPageResponse
@@ -48,11 +48,6 @@ def bounding_box_from_polygon(polygon) -> dict[str, float] | None:
         "width": width,
         "height": height,
     }
-
-
-def require_admin(account: Account) -> None:
-    if account.role.name not in {"administrator", "municipal", "private"}:
-        raise HTTPException(status_code=403, detail="Parking operator access required")
 
 
 async def resolve_space_links(
@@ -105,7 +100,7 @@ async def create_space(
     account: Account = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
-    require_admin(account)
+    require_management_access(account)
     payload = normalize_space_payload(body)
 
     if not payload.code:

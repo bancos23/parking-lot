@@ -7,7 +7,7 @@ const { t } = useT()
 
 const sectionBlueprints = [
   { key: 'scope', paragraphs: 2 },
-  { key: 'accounts', paragraphs: 2, items: 3 },
+  { key: 'accounts', paragraphs: 2, items: 4 },
   { key: 'acceptable_use', paragraphs: 1 },
   { key: 'operational_data', paragraphs: 2 },
   { key: 'changes', paragraphs: 1 },

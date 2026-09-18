@@ -11,7 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from auth import get_current_account
+from auth import get_current_account, require_management_access
 from database import get_db
 from models import Account as AccountModel, LicensePlateDetectionHistory
 from schemas import LicensePlateDetectionHistoryResponse, LicensePlateDetectionHistoryItem
@@ -456,6 +456,8 @@ async def detect_plates(
     account: AccountModel = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
+    require_management_access(account)
+
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=422, detail="File must be an image")
 
@@ -501,6 +503,8 @@ async def plate_detection_history(
     account: AccountModel = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
+    require_management_access(account)
+
     query = select(LicensePlateDetectionHistory).where(
         LicensePlateDetectionHistory.account_id == account.id
     )

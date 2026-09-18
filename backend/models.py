@@ -1,7 +1,7 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,6 +28,8 @@ class Account(Base):
     password: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     phone: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    birth_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    city: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     role_id: Mapped[int] = mapped_column(ForeignKey("user_roles.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -35,6 +37,10 @@ class Account(Base):
 
     role: Mapped["UserRole"] = relationship(back_populates="accounts")
     sessions: Mapped[list["AccountSession"]] = relationship(back_populates="account")
+    license_plates: Mapped[list["AccountLicensePlate"]] = relationship(
+        back_populates="account",
+        cascade="all, delete-orphan",
+    )
     organisation_memberships: Mapped[list["OrganisationMembership"]] = relationship(
         back_populates="account",
         cascade="all, delete-orphan",
@@ -53,6 +59,28 @@ class AccountSession(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     account: Mapped["Account"] = relationship(back_populates="sessions")
+
+
+class AccountLicensePlate(Base):
+    __tablename__ = "account_license_plates"
+    __table_args__ = (
+        UniqueConstraint("account_id", "normalized_plate", name="uq_account_license_plates_account_plate"),
+        Index(
+            "uq_account_license_plates_active",
+            "account_id",
+            unique=True,
+            postgresql_where=text("is_active"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    plate_number: Mapped[str] = mapped_column(String(20), nullable=False)
+    normalized_plate: Mapped[str] = mapped_column(String(20), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    account: Mapped["Account"] = relationship(back_populates="license_plates")
 
 
 class Organisation(Base):

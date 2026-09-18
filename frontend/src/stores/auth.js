@@ -53,17 +53,6 @@ export function useAuth() {
         persistUser(state.user)
     }
 
-    function setRole(nextRole) {
-        if (!state.user) return
-
-        state.user = {
-            ...state.user,
-            role: nextRole,
-        }
-
-        persistUser(state.user)
-    }
-
     function clearSession({ expired = false } = {}) {
         state.user = null
         clearStoredUser()
@@ -117,7 +106,6 @@ export function useAuth() {
         role,
         isLocalGuest,
         login,
-        setRole,
         clearSession,
         expireSession,
         refreshSession,

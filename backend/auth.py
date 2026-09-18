@@ -1,26 +1,63 @@
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+import re
 import secrets
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from passlib.context import CryptContext
 from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from config import settings
 from database import get_db
-from models import Account, AccountSession, Organisation, OrganisationMembership, UserRole
-from schemas import AccountOrganisationResponse, AccountResponse, LoginRequest, MessageResponse, RegisterRequest
+from models import Account, AccountLicensePlate, AccountSession, Organisation, OrganisationMembership, UserRole
+from schemas import (
+    AccountLicensePlateCreate,
+    AccountLicensePlateResponse,
+    AccountOrganisationResponse,
+    AccountResponse,
+    AccountUpdateRequest,
+    LoginRequest,
+    MessageResponse,
+    RegisterRequest,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 SESSION_COOKIE_NAME = "parkflow_session"
+REGISTERED_USER_ROLE = "user"
+PARKING_MANAGER_ROLES = {"administrator", "municipal", "private"}
+CAMERA_VIEWER_ROLES = {*PARKING_MANAGER_ROLES, REGISTERED_USER_ROLE}
 
 
 def hash_session_token(token: str) -> str:
     return sha256(token.encode("utf-8")).hexdigest()
+
+
+def has_management_access(account: Account | None) -> bool:
+    return bool(account and account.role.name in PARKING_MANAGER_ROLES)
+
+
+def require_management_access(account: Account) -> None:
+    if not has_management_access(account):
+        raise HTTPException(status_code=403, detail="Parking management access required")
+
+
+def has_camera_access(account: Account | None) -> bool:
+    return bool(account and account.role.name in CAMERA_VIEWER_ROLES)
+
+
+def require_camera_access(account: Account) -> None:
+    if not has_camera_access(account):
+        raise HTTPException(status_code=403, detail="Camera access required")
+
+
+def require_user_access(account: Account) -> None:
+    if account.role.name != REGISTERED_USER_ROLE:
+        raise HTTPException(status_code=403, detail="User account required")
 
 
 def account_response(account: Account) -> AccountResponse:
@@ -34,6 +71,8 @@ def account_response(account: Account) -> AccountResponse:
         email=account.email,
         name=account.name,
         phone=account.phone,
+        birth_date=account.birth_date,
+        city=account.city,
         role=role_name,
         organisations=[
             AccountOrganisationResponse(
@@ -44,6 +83,10 @@ def account_response(account: Account) -> AccountResponse:
             )
             for membership in memberships
             if membership.deleted_at is None and membership.organisation.deleted_at is None
+        ],
+        license_plates=[
+            AccountLicensePlateResponse.model_validate(plate)
+            for plate in sorted(account.license_plates, key=lambda plate: (not plate.is_active, plate.id))
         ],
     )
 
@@ -57,6 +100,14 @@ def normalize_optional(value: str | None) -> str | None:
     return normalized or None
 
 
+def normalize_license_plate(value: str) -> tuple[str, str]:
+    plate_number = " ".join(value.strip().upper().split())
+    normalized_plate = re.sub(r"[\s-]+", "", plate_number)
+    if not re.fullmatch(r"[A-Z0-9]{3,15}", normalized_plate):
+        raise HTTPException(status_code=422, detail="Invalid license plate number")
+    return plate_number, normalized_plate
+
+
 def normalize_organisation_name(value: str) -> str:
     return " ".join(value.strip().split())
 
@@ -68,6 +119,7 @@ def normalized_organisation_key(value: str) -> str:
 def account_context_options():
     return (
         selectinload(Account.role),
+        selectinload(Account.license_plates),
         selectinload(Account.organisation_memberships).selectinload(OrganisationMembership.organisation),
     )
 
@@ -77,6 +129,7 @@ async def load_account_context(db: AsyncSession, account_id: int) -> Account | N
         select(Account)
         .options(*account_context_options())
         .where(Account.id == account_id)
+        .execution_options(populate_existing=True)
     )
     return result.scalar_one_or_none()
 
@@ -254,7 +307,7 @@ async def register(response: Response, body: RegisterRequest, db: AsyncSession =
     if not name:
         raise HTTPException(status_code=422, detail="Name is required")
 
-    role = await get_or_create_role(db, body.role)
+    role = await get_or_create_role(db, REGISTERED_USER_ROLE)
 
     account = Account(
         email=body.email,
@@ -264,22 +317,6 @@ async def register(response: Response, body: RegisterRequest, db: AsyncSession =
         role_id=role.id,
     )
     db.add(account)
-    await db.flush()
-
-    if body.role == "private":
-        organisation, created = await get_or_create_organisation(
-            db,
-            body.organisation_name or "",
-            account.id,
-        )
-        db.add(
-            OrganisationMembership(
-                account_id=account.id,
-                organisation_id=organisation.id,
-                membership_role="owner" if created else "associate",
-            )
-        )
-
     await db.commit()
 
     account_with_context = await load_account_context(db, account.id)
@@ -310,6 +347,146 @@ async def login(response: Response, body: LoginRequest, db: AsyncSession = Depen
 @router.get("/me", response_model=AccountResponse)
 async def me(account: Account = Depends(get_current_account)):
     return account_response(account)
+
+
+async def refreshed_account_response(db: AsyncSession, account_id: int) -> AccountResponse:
+    account = await load_account_context(db, account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return account_response(account)
+
+
+@router.patch("/me", response_model=AccountResponse)
+async def update_me(
+    body: AccountUpdateRequest,
+    account: Account = Depends(get_current_account),
+    db: AsyncSession = Depends(get_db),
+):
+    require_user_access(account)
+    name = normalize_name(body.name)
+    if not name:
+        raise HTTPException(status_code=422, detail="Name is required")
+
+    email = str(body.email)
+    existing = await db.execute(
+        select(Account.id)
+        .where(Account.email == email)
+        .where(Account.id != account.id)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    account.email = email
+    account.name = name
+    account.phone = normalize_optional(body.phone)
+    account.birth_date = body.birth_date
+    account.city = normalize_optional(body.city)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    return await refreshed_account_response(db, account.id)
+
+
+@router.post("/me/license-plates", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
+async def add_license_plate(
+    body: AccountLicensePlateCreate,
+    account: Account = Depends(get_current_account),
+    db: AsyncSession = Depends(get_db),
+):
+    require_user_access(account)
+    plate_number, normalized_plate = normalize_license_plate(body.plate_number)
+    existing = await db.execute(
+        select(AccountLicensePlate.id)
+        .where(AccountLicensePlate.account_id == account.id)
+        .where(AccountLicensePlate.normalized_plate == normalized_plate)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="License plate already registered")
+
+    active = await db.execute(
+        select(AccountLicensePlate.id)
+        .where(AccountLicensePlate.account_id == account.id)
+        .where(AccountLicensePlate.is_active.is_(True))
+        .limit(1)
+    )
+    db.add(
+        AccountLicensePlate(
+            account_id=account.id,
+            plate_number=plate_number,
+            normalized_plate=normalized_plate,
+            is_active=active.scalar_one_or_none() is None,
+        )
+    )
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="License plate already registered")
+
+    return await refreshed_account_response(db, account.id)
+
+
+@router.patch("/me/license-plates/{plate_id}/activate", response_model=AccountResponse)
+async def activate_license_plate(
+    plate_id: int,
+    account: Account = Depends(get_current_account),
+    db: AsyncSession = Depends(get_db),
+):
+    require_user_access(account)
+    result = await db.execute(
+        select(AccountLicensePlate)
+        .where(AccountLicensePlate.id == plate_id)
+        .where(AccountLicensePlate.account_id == account.id)
+    )
+    plate = result.scalar_one_or_none()
+    if not plate:
+        raise HTTPException(status_code=404, detail="License plate not found")
+
+    await db.execute(
+        update(AccountLicensePlate)
+        .where(AccountLicensePlate.account_id == account.id)
+        .values(is_active=False)
+    )
+    plate.is_active = True
+    await db.commit()
+    return await refreshed_account_response(db, account.id)
+
+
+@router.delete("/me/license-plates/{plate_id}", response_model=AccountResponse)
+async def delete_license_plate(
+    plate_id: int,
+    account: Account = Depends(get_current_account),
+    db: AsyncSession = Depends(get_db),
+):
+    require_user_access(account)
+    result = await db.execute(
+        select(AccountLicensePlate)
+        .where(AccountLicensePlate.id == plate_id)
+        .where(AccountLicensePlate.account_id == account.id)
+    )
+    plate = result.scalar_one_or_none()
+    if not plate:
+        raise HTTPException(status_code=404, detail="License plate not found")
+
+    was_active = plate.is_active
+    await db.delete(plate)
+    await db.flush()
+    if was_active:
+        replacement = await db.execute(
+            select(AccountLicensePlate)
+            .where(AccountLicensePlate.account_id == account.id)
+            .order_by(AccountLicensePlate.id)
+            .limit(1)
+        )
+        next_plate = replacement.scalar_one_or_none()
+        if next_plate:
+            next_plate.is_active = True
+
+    await db.commit()
+    return await refreshed_account_response(db, account.id)
 
 
 @router.post("/logout", response_model=MessageResponse)

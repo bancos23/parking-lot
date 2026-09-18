@@ -1,35 +1,19 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import AliasChoices, BaseModel, EmailStr, Field, model_validator
 
 
-AccountRole = Literal["guest", "private", "municipal"]
-RegisterRole = Literal["guest", "private"]
+AccountRole = Literal["guest", "user", "private", "municipal"]
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str
-    name: str
-    phone: str | None = None
-    role: RegisterRole = "guest"
-    organisation_name: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices(
-            "organisation_name",
-            "organization_name",
-            "orgName",
-            "organisationName",
-            "organizationName",
-        ),
-    )
+    password: str = Field(min_length=8, max_length=128)
+    name: str = Field(min_length=1, max_length=200)
+    phone: str | None = Field(default=None, max_length=30)
 
-    @model_validator(mode="after")
-    def require_organisation_for_private_operator(self):
-        if self.role == "private" and not (self.organisation_name or "").strip():
-            raise ValueError("Organisation name is required for private operators")
-        return self
+    model_config = {"extra": "forbid"}
 
 
 class LoginRequest(BaseModel):
@@ -44,19 +28,46 @@ class AccountOrganisationResponse(BaseModel):
     membership_role: str
 
 
+class AccountLicensePlateResponse(BaseModel):
+    id: int
+    plate_number: str
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
 class AccountResponse(BaseModel):
     id: int
     email: str
     name: str
     phone: str | None = None
+    birth_date: date | None = None
+    city: str | None = None
     role: AccountRole | str
     organisations: list[AccountOrganisationResponse] = Field(default_factory=list)
+    license_plates: list[AccountLicensePlateResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class AccountUpdateRequest(BaseModel):
+    email: EmailStr
+    name: str = Field(min_length=1, max_length=200)
+    phone: str | None = Field(default=None, max_length=30)
+    birth_date: date | None = Field(default=None, ge=date(1900, 1, 1), le=date.today())
+    city: str | None = Field(default=None, max_length=120)
+
+    model_config = {"extra": "forbid"}
+
+
+class AccountLicensePlateCreate(BaseModel):
+    plate_number: str = Field(min_length=3, max_length=20)
+
+    model_config = {"extra": "forbid"}
 
 
 ParkingSpaceStatus = Literal["available", "occupied", "reserved", "out_of_service"]

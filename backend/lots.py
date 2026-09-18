@@ -3,7 +3,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from auth import account_response, get_current_account, get_optional_account
+from auth import (
+    account_response,
+    get_current_account,
+    get_optional_account,
+    has_camera_access,
+    has_management_access,
+    require_management_access,
+)
 from database import get_db
 from models import Account, ParkingLot, ParkingLotCamera
 from schemas import (
@@ -20,11 +27,6 @@ router = APIRouter(prefix="/api", tags=["parking lots"])
 VALID_CAMERA_TYPES = {"panoramic", "number_plate"}
 VALID_LOT_STATES = {"enabled", "disabled"}
 SPACE_TYPE_ALIASES = {"charging_station": "electric"}
-
-
-def require_admin(account: Account) -> None:
-    if account.role.name not in {"administrator", "municipal", "private"}:
-        raise HTTPException(status_code=403, detail="Parking operator access required")
 
 
 def normalize_camera_payload(body: ParkingLotCameraCreate) -> ParkingLotCameraCreate:
@@ -99,7 +101,7 @@ def lot_space_type_counts(lot: ParkingLot) -> dict[str, int]:
     return counts
 
 
-def lot_response(lot: ParkingLot) -> ParkingLotResponse:
+def lot_response(lot: ParkingLot, include_cameras: bool = False) -> ParkingLotResponse:
     occupied_spots = sum(1 for space in lot.spaces if space.is_active and space.status == "occupied")
     return ParkingLotResponse(
         id=lot.id,
@@ -116,7 +118,11 @@ def lot_response(lot: ParkingLot) -> ParkingLotResponse:
         is_free=lot.is_free,
         open_hours=lot.open_hours,
         payment_link=lot.payment_link,
-        cameras=[ParkingLotCameraResponse.model_validate(camera) for camera in lot.cameras],
+        cameras=(
+            [ParkingLotCameraResponse.model_validate(camera) for camera in lot.cameras]
+            if include_cameras
+            else []
+        ),
     )
 
 
@@ -126,19 +132,19 @@ async def list_lots(
     account: Account | None = Depends(get_optional_account),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(ParkingLot)
-        .options(
-            selectinload(ParkingLot.cameras),
-            selectinload(ParkingLot.spaces),
-        )
-        .order_by(ParkingLot.name)
+    query = select(ParkingLot).options(
+        selectinload(ParkingLot.cameras),
+        selectinload(ParkingLot.spaces),
     )
+    if not has_management_access(account):
+        query = query.where(ParkingLot.state == "enabled")
+
+    result = await db.execute(query.order_by(ParkingLot.name))
     lots = result.scalars().all()
 
     return ParkingLotsPageResponse(
         account=account_response(account) if account else None,
-        lots=[lot_response(lot) for lot in lots],
+        lots=[lot_response(lot, include_cameras=has_camera_access(account)) for lot in lots],
     )
 
 
@@ -148,7 +154,7 @@ async def create_lot(
     account: Account = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
-    require_admin(account)
+    require_management_access(account)
 
     name = body.name.strip()
     address = body.address.strip()
@@ -209,7 +215,7 @@ async def create_lot(
         .where(ParkingLot.id == lot.id)
     )
     created_lot = result.scalar_one()
-    return lot_response(created_lot)
+    return lot_response(created_lot, include_cameras=True)
 
 
 @router.patch("/lots/{lot_id}", response_model=ParkingLotResponse)
@@ -219,7 +225,7 @@ async def update_lot(
     account: Account = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
-    require_admin(account)
+    require_management_access(account)
 
     result = await db.execute(
         select(ParkingLot)
@@ -283,7 +289,7 @@ async def update_lot(
         .where(ParkingLot.id == lot.id)
     )
     updated_lot = result.scalar_one()
-    return lot_response(updated_lot)
+    return lot_response(updated_lot, include_cameras=True)
 
 
 @router.delete("/lots/{lot_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -292,7 +298,7 @@ async def delete_lot(
     account: Account = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
-    require_admin(account)
+    require_management_access(account)
 
     lot = await db.get(ParkingLot, lot_id)
     if not lot:
@@ -314,7 +320,7 @@ async def allocate_camera(
     account: Account = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
-    require_admin(account)
+    require_management_access(account)
 
     lot = await db.get(ParkingLot, lot_id)
     if not lot:

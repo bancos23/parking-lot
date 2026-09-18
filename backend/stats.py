@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth import get_optional_account
+from auth import get_current_account, require_management_access
 from config import settings
 from database import get_db
 from models import Account, ParkingSpace
@@ -332,17 +332,19 @@ async def occupancy_forecast(
     hours: int = Query(default=24, ge=6, le=48),
     lot_id: int | None = Query(default=None, ge=1),
     lookback_days: int = Query(default=90, ge=1, le=365),
-    account: Account | None = Depends(get_optional_account),
+    account: Account = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
-    return {**await forecast_payload(db, hours, lot_id, lookback_days), "account_id": account.id if account else None}
+    require_management_access(account)
+    return {**await forecast_payload(db, hours, lot_id, lookback_days), "account_id": account.id}
 
 
 @router.get("/stats/occupancy-heatmap")
 async def occupancy_heatmap(
     lookback_days: int = Query(default=30, ge=1, le=365),
     lot_id: int | None = Query(default=None, ge=1),
-    account: Account | None = Depends(get_optional_account),
+    account: Account = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
-    return {**await heatmap_payload(db, lot_id, lookback_days), "account_id": account.id if account else None}
+    require_management_access(account)
+    return {**await heatmap_payload(db, lot_id, lookback_days), "account_id": account.id}

@@ -22,7 +22,7 @@ from spaces import router as spaces_router
 from plates import router as plates_router, warm_up_plate_model, warm_up_plate_ocr
 from stats import router as stats_router, warm_default_stats
 
-DEFAULT_ROLES = ["municipal", "private", "guest", "administrator"]
+DEFAULT_ROLES = ["municipal", "private", "guest", "administrator", "user"]
 
 SCHEMA_UPGRADE_STATEMENTS = [
     "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS name VARCHAR(200)",
@@ -49,6 +49,8 @@ SCHEMA_UPGRADE_STATEMENTS = [
     "UPDATE accounts SET name = email WHERE name IS NULL",
     "ALTER TABLE accounts ALTER COLUMN name SET NOT NULL",
     "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS phone VARCHAR(30)",
+    "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS birth_date DATE",
+    "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS city VARCHAR(120)",
     """
     DO $$
     BEGIN

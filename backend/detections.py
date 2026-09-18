@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
 
-from auth import get_current_account
+from auth import get_current_account, require_camera_access, require_management_access
 from config import settings
 from database import async_session, get_db
 from models import Account, ParkingLot, ParkingLotCamera, ParkingDetectionSnapshot, ParkingSpace
@@ -59,11 +59,6 @@ URL_STREAM_FRAME_MAX_BYTES = 4 * 1024 * 1024
 YOUTUBE_REFERENCE_FRAME = {"width": 1920, "height": 1080}
 YOUTUBE_STREAM_CACHE_SECONDS = 300
 YOUTUBE_STREAM_CACHE: dict[str, dict[str, Any]] = {}
-
-
-def require_admin(account: Account) -> None:
-    if account.role.name not in {"administrator", "municipal", "private"}:
-        raise HTTPException(status_code=403, detail="Parking operator access required")
 
 
 def coordinates_payload(latitude: float | None, longitude: float | None) -> dict[str, float] | None:
@@ -1345,7 +1340,7 @@ async def camera_occupancy_snapshot(
     account: Account = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
-    require_admin(account)
+    require_camera_access(account)
 
     result = await db.execute(
         select(ParkingLotCamera)
@@ -1392,8 +1387,10 @@ async def camera_occupancy_snapshot(
 @router.get("/lots/{lot_id}/detection-config")
 async def lot_detection_config(
     lot_id: int,
+    account: Account = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
+    require_management_access(account)
     result = await db.execute(
         select(ParkingLot)
         .options(selectinload(ParkingLot.cameras), selectinload(ParkingLot.spaces))
@@ -1464,7 +1461,7 @@ async def lot_detection_history(
     account: Account = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
-    require_admin(account)
+    require_management_access(account)
 
     lot = await db.get(ParkingLot, lot_id)
     if not lot:
@@ -1497,7 +1494,7 @@ async def detect_camera_occupancy(
     account: Account = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
-    require_admin(account)
+    require_management_access(account)
     return await run_camera_occupancy_detection(camera_id, body, db)
 
 
@@ -1508,7 +1505,7 @@ async def receive_camera_detections(
     account: Account = Depends(get_current_account),
     db: AsyncSession = Depends(get_db),
 ):
-    require_admin(account)
+    require_management_access(account)
 
     camera = await db.get(ParkingLotCamera, camera_id)
     if not camera:

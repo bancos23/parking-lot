@@ -16,8 +16,6 @@ const email = ref('')
 const password = ref('')
 const name = ref('')
 const phone = ref('')
-const role = ref('guest')
-const orgName = ref('')
 const agree = ref(false)
 const remember = ref(true)
 const error = ref('')
@@ -67,18 +65,12 @@ function submit() {
     error.value = t('auth.err.agree')
     return
   }
-  if (role.value === 'private' && !orgName.value.trim()) {
-    error.value = t('auth.err.org_required')
-    return
-  }
   emit('login', {
     action: 'register',
     email: email.value,
     password: password.value,
     name: name.value,
     phone: phone.value || null,
-    role: role.value,
-    organisationName: role.value === 'private' ? orgName.value.trim() : null,
   })
 }
 </script>
@@ -194,34 +186,6 @@ function submit() {
                 <label>{{ t('auth.phone') }} <span class="optional">{{ t('auth.optional') }}</span></label>
                 <div class="input-wrap"><span class="input-ic">☎</span><input v-model="phone" type="tel"
                     placeholder="+40 7XX XXX XXX"></div>
-              </div>
-
-              <div class="field">
-                <label>{{ t('auth.account_type') }}</label>
-                <div class="role-cards">
-                  <label class="role-card" :class="{ active: role === 'guest' }">
-                    <input v-model="role" type="radio" name="role" value="guest">
-                    <div class="role-card-ic">👤</div>
-                    <div class="role-card-text">
-                      <div class="role-card-title">{{ t('auth.role.driver') }}</div>
-                      <div class="role-card-sub">{{ t('auth.role.driver.sub') }}</div>
-                    </div>
-                  </label>
-                  <label class="role-card" :class="{ active: role === 'private' }">
-                    <input v-model="role" type="radio" name="role" value="private">
-                    <div class="role-card-ic">▦</div>
-                    <div class="role-card-text">
-                      <div class="role-card-title">{{ t('auth.role.admin') }}</div>
-                      <div class="role-card-sub">{{ t('auth.role.admin.sub') }}</div>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              <div v-if="role === 'private'" class="field">
-                <label>{{ t('auth.org') }}</label>
-                <div class="input-wrap"><span class="input-ic">🏢</span><input v-model="orgName" type="text"
-                    :placeholder="t('auth.org.placeholder')"></div>
               </div>
 
               <label class="checkbox-row">

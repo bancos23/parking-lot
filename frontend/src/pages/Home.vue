@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import LangSwitcher from '@frontend/components/LangSwitcher.vue'
+import AccountSettingsModal from '@frontend/components/AccountSettingsModal.vue'
 import MapTab from '@frontend/components/MapTab.vue'
 import StatsTab from '@frontend/components/StatsTab.vue'
 import LotsTab from '@frontend/components/LotsTab.vue'
@@ -10,20 +11,27 @@ import { SESSION_EXPIRED_EVENT, useAuth } from '@frontend/stores/auth'
 
 const router = useRouter()
 const { t } = useT()
-const { user, role, setRole, logout: logoutUser } = useAuth()
+const { user, role, login: updateUser, logout: logoutUser } = useAuth()
 
 const tab = ref('map')
 const tweaksOpen = ref(false)
 const menuOpen = ref(false)
+const accountSettingsOpen = ref(false)
 const tweaks = reactive(loadTweaks())
 const canLogout = computed(() => role.value !== 'guest')
-const canSwitchRole = computed(() => role.value !== 'guest')
+const canManageAccount = computed(() => role.value === 'user')
+const canManageParking = computed(() => ['private', 'municipal'].includes(role.value))
 
-const tabs = computed(() => [
-    { v: 'map', l: t('tab.map'), icon: '📍' },
-    { v: 'stats', l: t('tab.stats'), icon: '📈' },
-    { v: 'lots', l: t('tab.lots'), icon: '🅿️' },
-])
+const tabs = computed(() => {
+    const items = [{ v: 'map', l: t('tab.map'), icon: '📍' }]
+    if (canManageParking.value) {
+        items.push(
+            { v: 'stats', l: t('tab.stats'), icon: '📈' },
+            { v: 'lots', l: t('tab.lots'), icon: '🅿️' },
+        )
+    }
+    return items
+})
 
 function loadTweaks() {
     try {
@@ -88,7 +96,17 @@ function applyAccent() {
 async function logout() {
     await logoutUser({ remote: true })
     menuOpen.value = false
+    accountSettingsOpen.value = false
     router.push('/login')
+}
+
+function openAccountSettings() {
+    menuOpen.value = false
+    accountSettingsOpen.value = true
+}
+
+function handleAccountUpdated(account) {
+    updateUser(account)
 }
 
 async function handleUserChipClick() {
@@ -104,6 +122,7 @@ async function handleUserChipClick() {
 
 function handleSessionExpired() {
     menuOpen.value = false
+    accountSettingsOpen.value = false
     router.push('/login')
 }
 
@@ -168,20 +187,8 @@ onBeforeUnmount(() => {
 
             <div class="header-spacer"></div>
 
-            <div class="desktop-only">
+            <div class="header-language">
                 <LangSwitcher />
-            </div>
-
-            <div v-if="canSwitchRole" class="role-switch desktop-only" title="Switch role (demo)">
-                <button type="button" :class="{ active: role === 'municipal' }" @click="setRole('municipal')">
-                    {{ t('role.municipal') }}
-                </button>
-                <button type="button" :class="{ active: role === 'private' }" @click="setRole('private')">
-                    {{ t('role.private') }}
-                </button>
-                <button type="button" :class="{ active: role === 'guest' }" @click="setRole('guest')">
-                    {{ t('role.guest') }}
-                </button>
             </div>
 
             <div class="user-chip" :title="user?.email" @click="handleUserChipClick">
@@ -191,17 +198,15 @@ onBeforeUnmount(() => {
                 <span class="name desktop-only">
                     {{ user?.name || user?.email?.split('@')[0] }}
                 </span>
-                <template v-if="canLogout">
-                <button class="icon-btn desktop-only logout-mini" type="button" title="Ieșire" @click.stop="logout">
-                    ↪
-                </button>
-                </template>
+                <button v-if="canLogout" class="icon-btn desktop-only menu-mini" type="button"
+                    :title="t('menu.open')" :aria-label="t('menu.open')" :aria-expanded="menuOpen"
+                    @click.stop="menuOpen = !menuOpen">⋮</button>
             </div>
 
             <template v-if="menuOpen">
-                <div class="mobile-menu-backdrop" @click="menuOpen = false"></div>
+                <div class="mobile-menu-backdrop account-menu-backdrop" @click="menuOpen = false"></div>
 
-                <div class="mobile-menu">
+                <div class="mobile-menu account-menu">
                     <div class="mm-section">
                         <div class="mm-user">
                             <div class="avatar big">
@@ -214,25 +219,13 @@ onBeforeUnmount(() => {
                         </div>
                     </div>
 
-                    <div class="mm-section">
-                        <div class="mm-label">{{ t('lang.label') }}</div>
-                        <LangSwitcher />
-                    </div>
-
-                    <div v-if="canSwitchRole" class="mm-section">
-                        <div class="mm-label">{{ t('role.title') }}</div>
-
-                        <button v-for="item in [
-                            { v: 'municipal', l: t('role.municipal.full'), sub: t('role.municipal.sub') },
-                            { v: 'private', l: t('role.private.full'), sub: t('role.private.sub') },
-                            { v: 'guest', l: t('role.guest.full'), sub: t('role.guest.sub') },
-                        ]" :key="item.v" class="mm-item" :class="{ active: role === item.v }" type="button"
-                            @click="setRole(item.v); menuOpen = false">
+                    <div v-if="canManageAccount" class="mm-section">
+                        <button class="mm-item" type="button" @click="openAccountSettings">
                             <div>
-                                <div class="mm-item-l">{{ item.l }}</div>
-                                <div class="mm-item-s">{{ item.sub }}</div>
+                                <div class="mm-item-l">{{ t('menu.account_settings') }}</div>
+                                <div class="mm-item-s">{{ t('menu.account_settings.sub') }}</div>
                             </div>
-                            <span v-if="role === item.v">✓</span>
+                            <span>⚙</span>
                         </button>
                     </div>
 
@@ -246,6 +239,9 @@ onBeforeUnmount(() => {
             </template>
         </header>
 
+        <AccountSettingsModal v-if="accountSettingsOpen && canManageAccount" :user="user"
+            @close="accountSettingsOpen = false" @updated="handleAccountUpdated" />
+
         <nav class="mobile-tabs">
             <button v-for="item in tabs" :key="item.v" :class="{ active: tab === item.v }" type="button"
                 @click="tab = item.v">
@@ -256,8 +252,8 @@ onBeforeUnmount(() => {
 
         <main class="tab-content">
             <MapTab v-if="tab === 'map'" :role="role" />
-            <StatsTab v-if="tab === 'stats'" :role="role" />
-            <LotsTab v-if="tab === 'lots'" :role="role" />
+            <StatsTab v-if="tab === 'stats' && canManageParking" :role="role" />
+            <LotsTab v-if="tab === 'lots' && canManageParking" :role="role" />
         </main>
 
         <div v-if="tweaksOpen" class="tweaks-panel-host">

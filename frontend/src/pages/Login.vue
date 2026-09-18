@@ -45,8 +45,6 @@ async function handleLogin(payload) {
                 password: payload.password,
                 name: payload.name,
                 phone: payload.phone,
-                role: payload.role,
-                organisationName: payload.organisationName,
             }
             : {
                 email: payload.email,

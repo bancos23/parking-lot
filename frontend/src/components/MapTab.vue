@@ -33,7 +33,7 @@ const filteredLots = computed(() => lots.value.filter(lot => {
   return true
 }))
 const selected = computed(() => lots.value.find(l => l.id === selectedId.value))
-const canViewCamera = computed(() => props.role !== 'guest')
+const canViewCamera = computed(() => ['user', 'private', 'municipal'].includes(props.role))
 const selectedCamera = computed(() => {
   const cameras = Array.isArray(selected.value?.cameras) ? selected.value.cameras : []
   return cameras.find(camera => camera.is_active !== false && camera.is_primary && camera.stream_url)
@@ -346,7 +346,7 @@ watch(selectedId, () => {
             :camera-name="selectedCamera.name"
             :camera-type="selectedCamera.camera_type"
             :stream-url="selectedCamera.stream_url"
-            force-refresh-on-mount
+            :force-refresh-on-mount="['private', 'municipal'].includes(role)"
             @occupancy="applyOccupancySnapshot"
           />
         </div>
