@@ -109,15 +109,10 @@ function handleAccountUpdated(account) {
     updateUser(account)
 }
 
-async function handleUserChipClick() {
-    if (role.value === 'guest') {
-        await logoutUser()
-        menuOpen.value = false
-        router.push('/login')
-        return
-    }
-
-    menuOpen.value = !menuOpen.value
+async function leaveGuestMode() {
+    await logoutUser()
+    menuOpen.value = false
+    router.push('/login')
 }
 
 function handleSessionExpired() {
@@ -191,14 +186,15 @@ onBeforeUnmount(() => {
                 <LangSwitcher />
             </div>
 
-            <div class="user-chip" :title="user?.email" @click="handleUserChipClick">
+            <div class="user-chip" :class="{ 'guest-exit': role === 'guest' }" :title="user?.email"
+                @click="role === 'guest' && leaveGuestMode()">
                 <div class="avatar">
                     {{ (user?.name || user?.email || '').slice(0, 2).toUpperCase() }}
                 </div>
                 <span class="name desktop-only">
                     {{ user?.name || user?.email?.split('@')[0] }}
                 </span>
-                <button v-if="canLogout" class="icon-btn desktop-only menu-mini" type="button"
+                <button v-if="canLogout" class="icon-btn menu-mini" type="button"
                     :title="t('menu.open')" :aria-label="t('menu.open')" :aria-expanded="menuOpen"
                     @click.stop="menuOpen = !menuOpen">⋮</button>
             </div>
