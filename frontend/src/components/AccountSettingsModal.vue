@@ -1,18 +1,25 @@
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useT } from '@frontend/composables/i18n'
 import { useAuth } from '@frontend/stores/auth'
 
 const props = defineProps({ user: { type: Object, required: true } })
-const emit = defineEmits(['close', 'updated'])
+const emit = defineEmits(['close', 'updated', 'deleted', 'password-changed'])
 const { t } = useT()
-const { expireSession } = useAuth()
+const { clearSession, expireSession } = useAuth()
 
 const now = new Date()
 const today = new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
 const form = reactive({ name: '', email: '', phone: '', birthDate: '', city: '' })
 const plates = ref([])
 const newPlate = ref('')
+const passwordForm = reactive({ current: '', next: '', confirmation: '' })
+const passwordEditorOpen = ref(false)
+const currentPasswordVerified = ref(false)
+const passwordError = ref('')
+const deletePassword = ref('')
+const deleteEditorOpen = ref(false)
+const deleteConfirmationOpen = ref(false)
 const busy = ref(false)
 const error = ref('')
 const success = ref('')
@@ -28,7 +35,18 @@ function syncAccount(account) {
 
 watch(() => props.user, syncAccount, { immediate: true })
 
+const hasAccountChanges = computed(() =>
+  form.name !== (props.user?.name || '')
+  || form.email !== (props.user?.email || '')
+  || form.phone !== (props.user?.phone || '')
+  || form.birthDate !== (props.user?.birth_date || '')
+  || form.city !== (props.user?.city || '')
+)
+
 function apiError(data) {
+  if (data?.detail === 'Incorrect password') return t('account.delete.incorrect_password')
+  if (data?.detail === 'Incorrect current password') return t('account.password.incorrect_current')
+  if (data?.detail === 'New password must be different') return t('account.password.same')
   if (typeof data?.detail === 'string') return data.detail
   if (Array.isArray(data?.detail)) return data.detail.map(item => item.msg || String(item)).join(' ')
   return t('account.error')
@@ -57,6 +75,7 @@ function applyUpdate(account, message = '') {
 }
 
 async function saveAccount() {
+  if (!hasAccountChanges.value || busy.value) return
   busy.value = true
   error.value = ''
   success.value = ''
@@ -131,8 +150,138 @@ async function deletePlate(plate) {
   }
 }
 
+function closePasswordEditor() {
+  passwordEditorOpen.value = false
+  currentPasswordVerified.value = false
+  passwordForm.current = ''
+  passwordForm.next = ''
+  passwordForm.confirmation = ''
+  passwordError.value = ''
+}
+
+function openPasswordEditor() {
+  closeDeleteEditor()
+  passwordEditorOpen.value = true
+}
+
+async function verifyCurrentPassword() {
+  passwordError.value = ''
+  if (!passwordForm.current) {
+    passwordError.value = t('account.password.current_required')
+    return
+  }
+
+  busy.value = true
+  try {
+    await accountRequest('/api/auth/me/password/verify', {
+      method: 'POST',
+      body: JSON.stringify({ password: passwordForm.current }),
+    })
+    currentPasswordVerified.value = true
+  } catch (requestError) {
+    passwordError.value = requestError.message || t('account.error')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function changePassword() {
+  passwordError.value = ''
+  if (!passwordForm.next || !passwordForm.confirmation) {
+    passwordError.value = t('account.password.new_required')
+    return
+  }
+  if (passwordForm.next.length < 8) {
+    passwordError.value = t('account.password.too_short')
+    return
+  }
+  if (passwordForm.next !== passwordForm.confirmation) {
+    passwordError.value = t('account.password.mismatch')
+    return
+  }
+  if (passwordForm.current === passwordForm.next) {
+    passwordError.value = t('account.password.same')
+    return
+  }
+
+  busy.value = true
+  try {
+    await accountRequest('/api/auth/me/password', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        current_password: passwordForm.current,
+        new_password: passwordForm.next,
+      }),
+    })
+    clearSession()
+    emit('password-changed')
+  } catch (requestError) {
+    passwordError.value = requestError.message || t('account.error')
+  } finally {
+    busy.value = false
+  }
+}
+
+function closeDeleteEditor() {
+  deleteEditorOpen.value = false
+  deletePassword.value = ''
+  error.value = ''
+}
+
+function openDeleteEditor() {
+  closePasswordEditor()
+  deleteEditorOpen.value = true
+  error.value = ''
+  success.value = ''
+}
+
+async function requestAccountDeletion() {
+  if (!deletePassword.value) {
+    error.value = t('account.delete.password_required')
+    success.value = ''
+    return
+  }
+
+  busy.value = true
+  error.value = ''
+  try {
+    await accountRequest('/api/auth/me/password/verify', {
+      method: 'POST',
+      body: JSON.stringify({ password: deletePassword.value }),
+    })
+    deleteConfirmationOpen.value = true
+  } catch (requestError) {
+    error.value = requestError.message || t('account.error')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function deleteAccount() {
+  busy.value = true
+  error.value = ''
+  success.value = ''
+  try {
+    await accountRequest('/api/auth/me', {
+      method: 'DELETE',
+      body: JSON.stringify({ password: deletePassword.value }),
+    })
+    clearSession()
+    emit('deleted')
+  } catch (requestError) {
+    deleteConfirmationOpen.value = false
+    error.value = requestError.message || t('account.error')
+  } finally {
+    busy.value = false
+  }
+}
+
 function handleKeydown(event) {
-  if (event.key === 'Escape' && !busy.value) emit('close')
+  if (event.key !== 'Escape' || busy.value) return
+  if (deleteConfirmationOpen.value) deleteConfirmationOpen.value = false
+  else if (passwordEditorOpen.value) closePasswordEditor()
+  else if (deleteEditorOpen.value) closeDeleteEditor()
+  else emit('close')
 }
 
 onMounted(() => window.addEventListener('keydown', handleKeydown))
@@ -213,15 +362,122 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
             <div v-else class="empty-plates">{{ t('account.plates.empty') }}</div>
           </section>
 
+          <section class="settings-section">
+            <div>
+              <div class="field-group-title">{{ t('account.password.title') }}</div>
+              <p class="settings-hint">{{ t('account.password.hint') }}</p>
+            </div>
+            <button v-if="!passwordEditorOpen" class="btn btn-primary password-action" type="button"
+              :disabled="busy" @click="openPasswordEditor">
+              {{ t('account.password.button') }}
+            </button>
+
+            <template v-else-if="!currentPasswordVerified">
+              <div class="field">
+                <label for="current-password">{{ t('account.password.current') }}</label>
+                <input id="current-password" v-model="passwordForm.current" type="password" maxlength="128"
+                  autocomplete="current-password" @input="passwordError = ''"
+                  @keydown.enter.prevent="verifyCurrentPassword">
+              </div>
+              <div v-if="passwordError" class="auth-error">⚠ {{ passwordError }}</div>
+              <div class="password-actions">
+                <button class="btn" type="button" :disabled="busy" @click="closePasswordEditor">
+                  {{ t('account.password.cancel') }}
+                </button>
+                <button class="btn btn-primary" type="button" :disabled="busy" @click="verifyCurrentPassword">
+                  {{ t('account.password.verify') }}
+                </button>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="settings-success">✓ {{ t('account.password.verified') }}</div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="new-password">{{ t('account.password.new') }}</label>
+                  <input id="new-password" v-model="passwordForm.next" type="password" maxlength="128"
+                    autocomplete="new-password" @input="passwordError = ''" @keydown.enter.prevent="changePassword">
+                </div>
+                <div class="field">
+                  <label for="confirm-new-password">{{ t('account.password.confirm') }}</label>
+                  <input id="confirm-new-password" v-model="passwordForm.confirmation" type="password" maxlength="128"
+                    autocomplete="new-password" @input="passwordError = ''" @keydown.enter.prevent="changePassword">
+                </div>
+              </div>
+              <div v-if="passwordError" class="auth-error">⚠ {{ passwordError }}</div>
+              <div class="password-actions">
+                <button class="btn" type="button" :disabled="busy" @click="closePasswordEditor">
+                  {{ t('account.password.cancel') }}
+                </button>
+                <button class="btn btn-primary" type="button" :disabled="busy" @click="changePassword">
+                  {{ t('account.password.save') }}
+                </button>
+              </div>
+            </template>
+          </section>
+
+          <section class="settings-section danger-zone">
+            <div>
+              <div class="field-group-title">{{ t('account.delete.title') }}</div>
+              <p class="settings-hint">{{ t('account.delete.hint') }}</p>
+            </div>
+            <button v-if="!deleteEditorOpen" class="btn delete-account" type="button" :disabled="busy"
+              @click="openDeleteEditor">{{ t('account.delete.open') }}</button>
+            <template v-else>
+              <div class="field">
+                <label for="delete-account-password">{{ t('account.delete.password') }}</label>
+                <input id="delete-account-password" v-model="deletePassword" type="password" maxlength="128"
+                  autocomplete="current-password" @input="error = ''" @keydown.enter.prevent="requestAccountDeletion">
+              </div>
+              <div class="password-actions">
+                <button class="btn" type="button" :disabled="busy" @click="closeDeleteEditor">
+                  {{ t('account.delete.cancel') }}
+                </button>
+                <button class="btn btn-danger" type="button" :disabled="busy" @click="requestAccountDeletion">
+                  {{ t('account.delete.verify') }}
+                </button>
+              </div>
+            </template>
+          </section>
+
           <div v-if="error" class="auth-error">⚠ {{ error }}</div>
           <div v-if="success" class="settings-success">✓ {{ success }}</div>
         </div>
 
         <div class="modal-foot">
           <button class="btn" type="button" :disabled="busy" @click="emit('close')">{{ t('account.close') }}</button>
-          <button class="btn btn-primary" type="submit" :disabled="busy">{{ t('account.save') }}</button>
+          <button v-if="hasAccountChanges" class="btn btn-primary" type="submit" :disabled="busy">
+            {{ t('account.save') }}
+          </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div v-if="deleteConfirmationOpen" class="modal-backdrop" @click="!busy && (deleteConfirmationOpen = false)">
+    <div class="modal delete-confirmation-modal" role="alertdialog" aria-modal="true"
+      aria-labelledby="delete-account-confirmation-title" @click.stop>
+      <div class="modal-head">
+        <div class="delete-confirmation-heading">
+          <span class="delete-confirmation-icon" aria-hidden="true">!</span>
+          <h3 id="delete-account-confirmation-title">{{ t('account.delete.confirm_title') }}</h3>
+        </div>
+        <button class="icon-btn" type="button" :aria-label="t('account.delete.cancel')" :disabled="busy"
+          @click="deleteConfirmationOpen = false">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="delete-confirmation-notice">
+          <p class="delete-confirmation-text">{{ t('account.delete.confirm') }}</p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" :disabled="busy" @click="deleteConfirmationOpen = false">
+          {{ t('account.delete.cancel') }}
+        </button>
+        <button class="btn btn-danger" type="button" :disabled="busy" @click="deleteAccount">
+          {{ t('account.delete.button') }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -349,6 +605,88 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
   border-radius: 8px;
   background: rgba(22, 163, 74, 0.12);
   color: var(--good);
+  font-size: 12px;
+}
+
+.danger-zone {
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
+.delete-account {
+  justify-self: start;
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.password-action {
+  justify-self: start;
+}
+
+.password-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.delete-confirmation-modal {
+  width: 380px;
+  border: 1px solid var(--border);
+  font-family: var(--font-sans);
+}
+
+.delete-confirmation-modal .modal-head {
+  padding: 12px 14px;
+}
+
+.delete-confirmation-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.delete-confirmation-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--bad);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.delete-confirmation-modal .icon-btn {
+  width: 28px;
+  height: 28px;
+}
+
+.delete-confirmation-modal .modal-body {
+  padding: 14px;
+}
+
+.delete-confirmation-notice {
+  padding: 10px 12px;
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  border-radius: 8px;
+  background: rgba(220, 38, 38, 0.06);
+}
+
+.delete-confirmation-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.delete-confirmation-modal .modal-foot {
+  padding: 10px 14px;
+}
+
+.delete-confirmation-modal .btn {
+  padding: 6px 11px;
+  border-radius: 7px;
   font-size: 12px;
 }
 

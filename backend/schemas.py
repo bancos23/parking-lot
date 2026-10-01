@@ -64,6 +64,19 @@ class AccountUpdateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class CurrentPasswordRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+
+    model_config = {"extra": "forbid"}
+
+
+class AccountPasswordUpdateRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    model_config = {"extra": "forbid"}
+
+
 class AccountLicensePlateCreate(BaseModel):
     plate_number: str = Field(min_length=3, max_length=20)
 

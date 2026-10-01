@@ -109,6 +109,11 @@ function handleAccountUpdated(account) {
     updateUser(account)
 }
 
+function handleAccountSessionEnded() {
+    accountSettingsOpen.value = false
+    router.push('/login')
+}
+
 async function leaveGuestMode() {
     await logoutUser()
     menuOpen.value = false
@@ -236,7 +241,8 @@ onBeforeUnmount(() => {
         </header>
 
         <AccountSettingsModal v-if="accountSettingsOpen && canManageAccount" :user="user"
-            @close="accountSettingsOpen = false" @updated="handleAccountUpdated" />
+            @close="accountSettingsOpen = false" @updated="handleAccountUpdated"
+            @deleted="handleAccountSessionEnded" @password-changed="handleAccountSessionEnded" />
 
         <nav class="mobile-tabs">
             <button v-for="item in tabs" :key="item.v" :class="{ active: tab === item.v }" type="button"

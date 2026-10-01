@@ -12,13 +12,23 @@ from sqlalchemy.orm import selectinload
 
 from config import settings
 from database import get_db
-from models import Account, AccountLicensePlate, AccountSession, Organisation, OrganisationMembership, UserRole
+from models import (
+    Account,
+    AccountLicensePlate,
+    AccountSession,
+    LicensePlateDetectionHistory,
+    Organisation,
+    OrganisationMembership,
+    UserRole,
+)
 from schemas import (
     AccountLicensePlateCreate,
     AccountLicensePlateResponse,
     AccountOrganisationResponse,
     AccountResponse,
     AccountUpdateRequest,
+    AccountPasswordUpdateRequest,
+    CurrentPasswordRequest,
     LoginRequest,
     MessageResponse,
     RegisterRequest,
@@ -129,6 +139,7 @@ async def load_account_context(db: AsyncSession, account_id: int) -> Account | N
         select(Account)
         .options(*account_context_options())
         .where(Account.id == account_id)
+        .where(Account.deleted_at.is_(None))
         .execution_options(populate_existing=True)
     )
     return result.scalar_one_or_none()
@@ -333,6 +344,7 @@ async def login(response: Response, body: LoginRequest, db: AsyncSession = Depen
         select(Account)
         .options(*account_context_options())
         .where(Account.email == body.email)
+        .where(Account.deleted_at.is_(None))
     )
     account = result.scalar_one_or_none()
 
@@ -388,6 +400,73 @@ async def update_me(
         raise HTTPException(status_code=409, detail="Email already registered")
 
     return await refreshed_account_response(db, account.id)
+
+
+@router.delete("/me", response_model=MessageResponse)
+async def delete_me(
+    response: Response,
+    body: CurrentPasswordRequest,
+    account: Account = Depends(get_current_account),
+    db: AsyncSession = Depends(get_db),
+):
+    require_user_access(account)
+    if not pwd_context.verify(body.password, account.password):
+        raise HTTPException(status_code=400, detail="Incorrect password")
+
+    await db.execute(delete(AccountSession).where(AccountSession.account_id == account.id))
+    await db.execute(delete(AccountLicensePlate).where(AccountLicensePlate.account_id == account.id))
+    await db.execute(
+        delete(LicensePlateDetectionHistory).where(
+            LicensePlateDetectionHistory.account_id == account.id
+        )
+    )
+    await db.execute(
+        delete(OrganisationMembership).where(OrganisationMembership.account_id == account.id)
+    )
+
+    account.email = f"deleted-{account.id}@deleted.invalid"
+    account.password = pwd_context.hash(secrets.token_urlsafe(32))
+    account.name = "Cont șters"
+    account.phone = None
+    account.birth_date = None
+    account.city = None
+    account.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    clear_session_cookie(response)
+    return MessageResponse(message="Account deleted")
+
+
+@router.post("/me/password/verify", response_model=MessageResponse)
+async def verify_current_password(
+    body: CurrentPasswordRequest,
+    account: Account = Depends(get_current_account),
+):
+    require_user_access(account)
+    if not pwd_context.verify(body.password, account.password):
+        raise HTTPException(status_code=400, detail="Incorrect current password")
+    return MessageResponse(message="Password verified")
+
+
+@router.patch("/me/password", response_model=MessageResponse)
+async def change_password(
+    response: Response,
+    body: AccountPasswordUpdateRequest,
+    account: Account = Depends(get_current_account),
+    db: AsyncSession = Depends(get_db),
+):
+    require_user_access(account)
+    if not pwd_context.verify(body.current_password, account.password):
+        raise HTTPException(status_code=400, detail="Incorrect current password")
+    if pwd_context.verify(body.new_password, account.password):
+        raise HTTPException(status_code=400, detail="New password must be different")
+
+    account.password = pwd_context.hash(body.new_password)
+    await db.execute(delete(AccountSession).where(AccountSession.account_id == account.id))
+    await db.commit()
+
+    clear_session_cookie(response)
+    return MessageResponse(message="Password changed")
 
 
 @router.post("/me/license-plates", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
