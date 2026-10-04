@@ -171,8 +171,8 @@ onMounted(async () => {
     zoomControl: false,
     attributionControl: false,
   })
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19 }).addTo(map)
-  L.control.attribution({ position: 'bottomright', prefix: false }).addAttribution('© OpenStreetMap, © CARTO').addTo(map)
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map)
+  L.control.attribution({ position: 'bottomright', prefix: false }).addAttribution('© Esri, OpenStreetMap contributors').addTo(map)
   mapInstance.value = map
   map.on('zoomend moveend viewreset resize', scheduleLayerRefresh)
   renderMarkers()
