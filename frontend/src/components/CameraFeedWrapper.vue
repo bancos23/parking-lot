@@ -563,9 +563,10 @@ async function forceRefreshOccupancy(runId = occupancyRunId) {
 function startOccupancyPolling() {
   stopOccupancyPolling()
   const runId = occupancyRunId
-  refreshOccupancy(runId)
   if (props.forceRefreshOnMount) {
     forceRefreshOccupancy(runId)
+  } else {
+    refreshOccupancy(runId)
   }
   occupancyTimer = setInterval(() => refreshOccupancy(runId), props.pollIntervalMs)
 }

@@ -715,16 +715,10 @@ def calculate_camera_parking_status(
                 }
             )
 
-    occupied = 0
-    available = 0
-    spot_results = []
+    candidates = []
+    best_overlaps = [0.0] * len(prepared_spots)
 
-    for spot in prepared_spots:
-        best_overlap = 0.0
-        best_vehicle = None
-        anchor_hit = False
-        anchor_point = None
-
+    for spot_index, spot in enumerate(prepared_spots):
         for vehicle in vehicle_shapes:
             overlap_area, _ = cv2.intersectConvexConvex(
                 spot["points"].astype(np.float32),
@@ -732,23 +726,32 @@ def calculate_camera_parking_status(
             )
 
             ratio = overlap_area / spot["area"]
-            if ratio > best_overlap:
-                best_overlap = ratio
-                best_vehicle = vehicle
+            best_overlaps[spot_index] = max(best_overlaps[spot_index], ratio)
 
             anchor = box_anchor_point(vehicle["box"])
-            if cv2.pointPolygonTest(spot["points"], anchor, False) >= 0:
-                anchor_hit = True
-                anchor_point = anchor
-                best_vehicle = vehicle
+            anchor_hit = cv2.pointPolygonTest(spot["points"], anchor, False) >= 0
+            if ratio >= occupied_threshold:
+                candidates.append((anchor_hit, ratio, vehicle["conf"], spot_index, vehicle, anchor))
 
-        is_occupied = anchor_hit or best_overlap >= occupied_threshold
+    matches = {}
+    matched_vehicles = set()
+    for anchor_hit, ratio, _, spot_index, vehicle, anchor in sorted(
+        candidates,
+        key=lambda candidate: (candidate[1], candidate[0], candidate[2]),
+        reverse=True,
+    ):
+        if spot_index in matches or vehicle["index"] in matched_vehicles:
+            continue
+        matches[spot_index] = (vehicle, ratio, anchor_hit, anchor)
+        matched_vehicles.add(vehicle["index"])
+
+    spot_results = []
+    for spot_index, spot in enumerate(prepared_spots):
+        match = matches.get(spot_index)
+        best_vehicle, overlap, anchor_hit, anchor_point = match or (None, best_overlaps[spot_index], False, None)
+        is_occupied = match is not None
+
         status = "occupied" if is_occupied else "available"
-
-        if is_occupied:
-            occupied += 1
-        else:
-            available += 1
 
         spot_results.append(
             {
@@ -756,7 +759,7 @@ def calculate_camera_parking_status(
                 "id": spot["id"],
                 "status": status,
                 "occupied": is_occupied,
-                "overlap": best_overlap,
+                "overlap": overlap,
                 "anchor_hit": anchor_hit,
                 "anchor_point": anchor_point,
                 "vehicle": best_vehicle,
@@ -765,6 +768,8 @@ def calculate_camera_parking_status(
             }
         )
 
+    occupied = len(matches)
+    available = len(prepared_spots) - occupied
     return occupied, available, spot_results
 
 
