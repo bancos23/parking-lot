@@ -2,6 +2,14 @@ import ro from '@frontend/locales/ro'
 
 const en = {
     ...ro,
+    'gate.title': 'Security key',
+    'gate.hint': 'Enter the security key to access the application.',
+    'gate.label': 'Access key',
+    'gate.placeholder': 'Enter the key',
+    'gate.submit': 'Unlock',
+    'gate.checking': 'Checking…',
+    'gate.error': 'Invalid security key.',
+
     'brand.sub': 'Management system',
     'brand.live': 'LIVE',
 

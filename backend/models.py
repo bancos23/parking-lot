@@ -49,6 +49,16 @@ class Account(Base):
     license_plate_detections: Mapped[list["LicensePlateDetectionHistory"]] = relationship(back_populates="account")
 
 
+class SecurityKey(Base):
+    __tablename__ = "security_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    label: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class AccountSession(Base):
     __tablename__ = "account_sessions"
 

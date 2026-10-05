@@ -16,6 +16,7 @@ from detections import (
     stop_occupancy_detection_scheduler,
     warm_up_occupancy_model,
 )
+from gate import GateMiddleware, load_gate_keys, router as gate_router
 from lots import router as lots_router
 from models import Account, AccountSession, UserRole
 from spaces import router as spaces_router
@@ -366,6 +367,7 @@ async def lifespan(app: FastAPI):
             if not exists.scalar_one_or_none():
                 db.add(UserRole(name=role_name))
         await db.commit()
+    await load_gate_keys()
 
     occupancy_detection_task = start_occupancy_detection_scheduler(async_session)
     stats_warm_task = asyncio.create_task(warm_default_stats(async_session))
@@ -379,6 +381,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# added before CORS so CORS stays outermost and gate 401s keep CORS headers
+app.add_middleware(GateMiddleware)
+
 app.add_middleware(
 	CORSMiddleware,
 	allow_origins=["http://localhost:5173"],
@@ -388,6 +393,7 @@ app.add_middleware(
 	allow_headers=["*"]
 )
 
+app.include_router(gate_router)
 app.include_router(auth_router)
 app.include_router(lots_router)
 app.include_router(spaces_router)

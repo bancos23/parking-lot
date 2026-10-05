@@ -1,4 +1,12 @@
 const ro = {
+        'gate.title': 'Cheie de securitate',
+        'gate.hint': 'Introdu cheia de securitate pentru a accesa aplicația.',
+        'gate.label': 'Cheie de acces',
+        'gate.placeholder': 'Introdu cheia',
+        'gate.submit': 'Deblochează',
+        'gate.checking': 'Se verifică…',
+        'gate.error': 'Cheie de securitate invalidă.',
+
         'brand.sub': 'Sistem de management',
         'brand.live': 'LIVE',
 
