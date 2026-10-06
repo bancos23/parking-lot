@@ -16,8 +16,8 @@ const editing = ref(null)
 const confirmDelete = ref(null)
 const platesLot = ref(null)
 const saving = ref(false)
-const canEdit = computed(() => ['private', 'municipal'].includes(props.role))
-const canUsePlates = computed(() => props.role === 'private')
+const canEdit = computed(() => ['private', 'municipal', 'administrator'].includes(props.role))
+const canUsePlates = computed(() => ['private', 'administrator'].includes(props.role))
 const tableColspan = computed(() => 9 + (canUsePlates.value ? 1 : 0) + (canEdit.value ? 1 : 0))
 
 const filtered = computed(() => lots.value.filter(l => {

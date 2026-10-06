@@ -41,6 +41,7 @@ SESSION_COOKIE_NAME = "parkflow_session"
 REGISTERED_USER_ROLE = "user"
 PARKING_MANAGER_ROLES = {"administrator", "municipal", "private"}
 CAMERA_VIEWER_ROLES = {*PARKING_MANAGER_ROLES, REGISTERED_USER_ROLE}
+ACCOUNT_SETTINGS_ROLES = {"administrator", REGISTERED_USER_ROLE}
 
 
 def hash_session_token(token: str) -> str:
@@ -66,12 +67,11 @@ def require_camera_access(account: Account) -> None:
 
 
 def require_user_access(account: Account) -> None:
-    if account.role.name != REGISTERED_USER_ROLE:
-        raise HTTPException(status_code=403, detail="User account required")
+    if account.role.name not in ACCOUNT_SETTINGS_ROLES:
+        raise HTTPException(status_code=403, detail="Account settings access required")
 
 
 def account_response(account: Account) -> AccountResponse:
-    role_name = "municipal" if account.role.name == "administrator" else account.role.name
     memberships = sorted(
         account.organisation_memberships,
         key=lambda membership: membership.organisation.name.lower(),
@@ -83,7 +83,7 @@ def account_response(account: Account) -> AccountResponse:
         phone=account.phone,
         birth_date=account.birth_date,
         city=account.city,
-        role=role_name,
+        role=account.role.name,
         organisations=[
             AccountOrganisationResponse(
                 id=membership.organisation.id,

@@ -19,8 +19,8 @@ const menuOpen = ref(false)
 const accountSettingsOpen = ref(false)
 const tweaks = reactive(loadTweaks())
 const canLogout = computed(() => role.value !== 'guest')
-const canManageAccount = computed(() => role.value === 'user')
-const canManageParking = computed(() => ['private', 'municipal'].includes(role.value))
+const canManageAccount = computed(() => ['user', 'administrator'].includes(role.value))
+const canManageParking = computed(() => ['private', 'municipal', 'administrator'].includes(role.value))
 
 const tabs = computed(() => {
     const items = [{ v: 'map', l: t('tab.map'), icon: '📍' }]

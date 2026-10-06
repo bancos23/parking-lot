@@ -414,7 +414,7 @@ def dashboard(account: Account | None = Depends(get_optional_account)):
 			"email": account.email,
 			"name": account.name,
 			"phone": account.phone,
-			"role": "municipal" if account.role.name == "administrator" else account.role.name,
+			"role": account.role.name,
 		} if account else None,
 		"stats": {
 			"totalSpots": 128,

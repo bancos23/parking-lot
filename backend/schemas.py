@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal
 from pydantic import AliasChoices, BaseModel, EmailStr, Field, model_validator
 
 
-AccountRole = Literal["guest", "user", "private", "municipal"]
+AccountRole = Literal["guest", "user", "private", "municipal", "administrator"]
 
 
 class RegisterRequest(BaseModel):
