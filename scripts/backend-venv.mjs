@@ -151,6 +151,13 @@ async function main() {
   await ensureVenv();
 
   if (action === "install") {
+    if (process.env.TORCH_CPU === "1") {
+      run(venvPython, [
+        "-m", "pip", "install", "torch", "torchvision",
+        "--index-url", "https://download.pytorch.org/whl/cpu",
+      ]);
+    }
+
     run(venvPython, ["-m", "pip", "install", "-e", "backend"]);
     return;
   }
