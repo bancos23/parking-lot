@@ -43,6 +43,7 @@ const occupancy = ref(null)
 const occupancyLoading = ref(false)
 const occupancyError = ref('')
 const isStageFullscreen = ref(false)
+const isMobileStageFullscreen = ref(false)
 
 let resizeObserver
 let occupancyTimer
@@ -360,13 +361,31 @@ function currentFullscreenElement() {
 }
 
 function handleStageFullscreenChange() {
-  isStageFullscreen.value = currentFullscreenElement() === stageRef.value
+  isStageFullscreen.value = isMobileStageFullscreen.value || currentFullscreenElement() === stageRef.value
+  requestAnimationFrame(syncOverlaySize)
+}
+
+function setMobileStageFullscreen(active) {
+  isMobileStageFullscreen.value = active
+  isStageFullscreen.value = active
+  document.documentElement.classList.toggle('mobile-feed-fullscreen-open', active)
+  stageRef.value?.closest('.camera-preview-modal')?.classList.toggle('mobile-feed-fullscreen-host', active)
   requestAnimationFrame(syncOverlaySize)
 }
 
 function toggleStageFullscreen() {
   const stage = stageRef.value
   if (!stage) return
+
+  if (isMobileStageFullscreen.value) {
+    setMobileStageFullscreen(false)
+    return
+  }
+
+  if (window.matchMedia('(max-width: 768px), (hover: none) and (pointer: coarse)').matches) {
+    setMobileStageFullscreen(true)
+    return
+  }
 
   if (currentFullscreenElement()) {
     const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen
@@ -585,6 +604,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  setMobileStageFullscreen(false)
   stopOccupancyPolling()
   resizeObserver?.disconnect()
   document.removeEventListener(FULLSCREEN_CHANGE_EVENT, handleStageFullscreenChange)
@@ -618,7 +638,7 @@ defineExpose({
       </div>
     </div>
 
-    <div ref="stageRef" class="feed-stage">
+    <div ref="stageRef" class="feed-stage" :class="{ 'mobile-fullscreen': isMobileStageFullscreen }">
       <img v-if="isImageFeed && !imageFailed" ref="mediaRef" class="feed-media" :src="normalizedUrl" :alt="cameraName"
         crossorigin="anonymous" @error="imageFailed = true" @load="syncOverlaySize" />
 

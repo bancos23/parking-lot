@@ -15,6 +15,8 @@ let markersLayer = null
 let layerRefreshFrame = null
 let lotsRefreshTimer = null
 let isUnmounting = false
+let sidebarDragStartY = null
+let sidebarHandleDragged = false
 
 const selectedId = ref(null)
 const search = ref('')
@@ -153,6 +155,36 @@ function openPaymentLink(lot) {
   window.open(lot.paymentLink, '_blank')
 }
 
+function startSidebarDrag(event) {
+  sidebarDragStartY = event.clientY
+  sidebarHandleDragged = false
+  event.currentTarget.setPointerCapture?.(event.pointerId)
+}
+
+function moveSidebarDrag(event) {
+  if (sidebarDragStartY === null) return
+  sidebarHandleDragged = Math.abs(event.clientY - sidebarDragStartY) > 8
+}
+
+function endSidebarDrag(event) {
+  if (sidebarDragStartY === null) return
+  if (event.clientY - sidebarDragStartY > 48) sidebarOpen.value = false
+  sidebarDragStartY = null
+}
+
+function cancelSidebarDrag() {
+  sidebarDragStartY = null
+  sidebarHandleDragged = false
+}
+
+function toggleSidebarFromHandle() {
+  if (sidebarHandleDragged) {
+    sidebarHandleDragged = false
+    return
+  }
+  sidebarOpen.value = !sidebarOpen.value
+}
+
 onMounted(async () => {
   await nextTick()
   isUnmounting = false
@@ -219,7 +251,9 @@ watch(selectedId, () => {
       <span>{{ filteredLots.length }} {{ t('map.lots_count') }}</span></button>
 
     <aside class="map-sidebar" :class="{ open: sidebarOpen }">
-      <div class="sidebar-handle mobile-only" @click="sidebarOpen = !sidebarOpen"></div>
+      <button class="sidebar-handle mobile-only" type="button" :aria-label="t('account.close')"
+        @pointerdown="startSidebarDrag" @pointermove="moveSidebarDrag" @pointerup="endSidebarDrag"
+        @pointercancel="cancelSidebarDrag" @click="toggleSidebarFromHandle"></button>
       <div class="search-bar">
         <div class="search-input">
           <span class="search-ico">⌕</span>

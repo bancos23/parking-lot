@@ -69,8 +69,10 @@ input, select, textarea { font: inherit; color: inherit; }
   display: grid;
   grid-template-rows: 56px 1fr;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 /* === Header === */
@@ -353,6 +355,7 @@ input, select, textarea { font: inherit; color: inherit; }
 .lot-list {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: 6px 6px;
   display: flex;
   flex-direction: column;
@@ -1018,6 +1021,31 @@ input, select, textarea { font: inherit; color: inherit; }
 .feed-stage:-webkit-full-screen {
   background: #000;
 }
+
+.feed-stage.mobile-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  aspect-ratio: auto;
+  background: #000;
+}
+.feed-stage.mobile-fullscreen .feed-fullscreen-toggle {
+  top: max(10px, env(safe-area-inset-top, 0px));
+  right: max(10px, env(safe-area-inset-right, 0px));
+  opacity: 1;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .feed-fullscreen-toggle { opacity: 1; }
+}
+
+.camera-preview-modal.mobile-feed-fullscreen-host { overflow: visible; }
+html.mobile-feed-fullscreen-open,
+html.mobile-feed-fullscreen-open body { overflow: hidden; }
 .feed-status-bar {
   min-height: 34px;
   display: flex;
@@ -2248,6 +2276,11 @@ input, select, textarea { font: inherit; color: inherit; }
   .desktop-only { display: none !important; }
   .mobile-only { display: inline-flex !important; }
 
+  /* Prevent Safari from auto-zooming after focusing a form field. */
+  input, select, textarea { font-size: 16px !important; }
+
+  .feed-fullscreen-toggle { opacity: 1; }
+
   /* === Legal pages === */
   .legal-topbar {
     min-height: auto;
@@ -2415,7 +2448,10 @@ input, select, textarea { font: inherit; color: inherit; }
     bottom: 60px; /* clear bottom nav */
     top: auto;
     height: 70vh;
+    height: 70dvh;
     max-height: calc(100vh - 120px);
+    max-height: calc(100dvh - 120px);
+    overscroll-behavior-y: contain;
     border-right: 0;
     border-top: 1px solid var(--border);
     border-top-left-radius: 16px;
@@ -2427,14 +2463,24 @@ input, select, textarea { font: inherit; color: inherit; }
   }
   .map-sidebar.open { transform: translateY(0); }
   .sidebar-handle {
-    display: block;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    margin: 0;
+    cursor: grab;
+    flex-shrink: 0;
+    touch-action: none;
+  }
+  .sidebar-handle::before {
+    content: '';
     width: 36px;
     height: 4px;
     background: var(--border-strong);
     border-radius: 4px;
-    margin: 8px auto 0;
-    cursor: grab;
-    flex-shrink: 0;
   }
 
   /* Lot detail becomes a bottom sheet */
