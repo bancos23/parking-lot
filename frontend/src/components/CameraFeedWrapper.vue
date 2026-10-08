@@ -265,8 +265,11 @@ function overlayTransform(spaces) {
 }
 
 function drawSpaceLabel(ctx, label, x, y, color) {
+  const m = String(label).match(/(\d+)\s*$/)
+  label = m ? String(Number(m[1])) : ''
+  if (!label) return
   const scale = window.devicePixelRatio || 1
-  const vw = Math.max(0.55, Math.min(0.8, (overlayCanvas.value?.clientWidth || 900) / 900))
+  const vw = Math.max(0.1, Math.min(0.8, (overlayCanvas.value?.clientWidth || 900) / 900))
   const paddingX = 3 * vw * scale
   const paddingY = 2 * vw * scale
   const labelHeight = 14 * vw * scale
