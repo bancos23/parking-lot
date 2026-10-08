@@ -6,7 +6,7 @@ import { useT } from '@frontend/composables/i18n'
 const { t } = useT()
 
 const sectionBlueprints = [
-  { key: 'contact', paragraphs: 1, items: 3 },
+  { key: 'contact', paragraphs: 1, items: 2 },
   { key: 'include', paragraphs: 1, items: 4 },
   { key: 'response', paragraphs: 1, items: 3 },
   { key: 'self_service', paragraphs: 1 },

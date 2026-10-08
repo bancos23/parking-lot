@@ -6,11 +6,11 @@ import { useT } from '@frontend/composables/i18n'
 const { t } = useT()
 
 const sectionBlueprints = [
-  { key: 'data', paragraphs: 1, items: 3 },
-  { key: 'usage', paragraphs: 2 },
+  { key: 'data', paragraphs: 2, items: 3 },
+  { key: 'usage', paragraphs: 3 },
   { key: 'location', paragraphs: 2 },
   { key: 'retention', paragraphs: 2 },
-  { key: 'choices', paragraphs: 1 },
+  { key: 'choices', paragraphs: 2 },
 ]
 
 const sections = computed(() => sectionBlueprints.map(({ key, paragraphs, items = 0 }) => ({
