@@ -266,10 +266,11 @@ function overlayTransform(spaces) {
 
 function drawSpaceLabel(ctx, label, x, y, color) {
   const scale = window.devicePixelRatio || 1
-  const paddingX = 3 * scale
-  const paddingY = 2 * scale
-  const labelHeight = 14 * scale
-  ctx.font = `600 ${9 * scale}px Inter, system-ui, sans-serif`
+  const vw = Math.max(0.55, Math.min(0.8, (overlayCanvas.value?.clientWidth || 900) / 900))
+  const paddingX = 3 * vw * scale
+  const paddingY = 2 * vw * scale
+  const labelHeight = 14 * vw * scale
+  ctx.font = `600 ${9 * vw * scale}px Inter, system-ui, sans-serif`
   ctx.textBaseline = 'top'
   const width = ctx.measureText(label).width + (paddingX * 2)
   ctx.fillStyle = 'rgba(5, 7, 13, 0.72)'
